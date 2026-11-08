@@ -1,0 +1,100 @@
+{
+  "name": "PegPower",
+  "namespace": "pegpower",
+  "version": "1.0.0",
+  "description": "Smart electricity access control and monitoring platform linking room booking and payment authorisation to physical power supply.",
+  "author": "PegPower Hackathon Team",
+  "function": {
+    "entrypoint": "app.main:main",
+    "runtime": "python3.12",
+    "timeout": 30
+  },
+  "ui": {
+    "entrypoint": "ui/main.py",
+    "dist": "ui/dist"
+  },
+  "runtime": {
+    "default": "docker",
+    "docker": {
+      "host": "127.0.0.1",
+      "port": 8000
+    }
+  },
+  "tables": [
+    {
+      "name": "rooms",
+      "description": "Room inventory and controller assignment",
+      "columns": [
+        {"name": "room_code", "type": "string", "required": true},
+        {"name": "display_name", "type": "string", "required": true},
+        {"name": "status", "type": "string", "default": "available"},
+        {"name": "assigned_device_id", "type": "string"}
+      ]
+    },
+    {
+      "name": "bookings",
+      "description": "Guest reservations and stay access windows",
+      "columns": [
+        {"name": "room_code", "type": "string", "required": true},
+        {"name": "guest_label", "type": "string", "required": true},
+        {"name": "start_at", "type": "datetime", "required": true},
+        {"name": "end_at", "type": "datetime", "required": true},
+        {"name": "booking_status", "type": "string", "default": "confirmed"}
+      ],
+      "hooks": {
+        "post_save": "pegpower.on_booking_post_save"
+      }
+    },
+    {
+      "name": "payments",
+      "description": "Simulated booking payments",
+      "columns": [
+        {"name": "booking_id", "type": "string", "required": true},
+        {"name": "payment_status", "type": "string", "required": true},
+        {"name": "amount", "type": "number", "default": 150.0},
+        {"name": "is_simulated", "type": "boolean", "default": true}
+      ],
+      "hooks": {
+        "post_save": "pegpower.on_payment_post_save"
+      }
+    },
+    {
+      "name": "devices",
+      "description": "Registered IoT controllers (MXChip AZ3166 & virtual nodes)",
+      "columns": [
+        {"name": "device_code", "type": "string", "required": true},
+        {"name": "room_code", "type": "string"},
+        {"name": "connection_status", "type": "string", "default": "offline"},
+        {"name": "reported_relay_state", "type": "string", "default": "OFF"},
+        {"name": "last_seen_at", "type": "datetime"}
+      ]
+    },
+    {
+      "name": "telemetry",
+      "description": "Virtual software electrical readings (V, I, kW, kWh)",
+      "columns": [
+        {"name": "room_code", "type": "string", "required": true},
+        {"name": "voltage", "type": "number"},
+        {"name": "current", "type": "number"},
+        {"name": "power", "type": "number"},
+        {"name": "energy", "type": "number"},
+        {"name": "is_simulated", "type": "boolean", "default": true},
+        {"name": "observed_at", "type": "datetime"}
+      ],
+      "hooks": {
+        "post_save": "pegpower.on_telemetry_post_save"
+      }
+    },
+    {
+      "name": "alerts",
+      "description": "Cross-reconciliation anomaly alerts",
+      "columns": [
+        {"name": "room_code", "type": "string", "required": true},
+        {"name": "alert_type", "type": "string", "required": true},
+        {"name": "severity", "type": "string", "default": "WARNING"},
+        {"name": "description", "type": "string", "required": true},
+        {"name": "status", "type": "string", "default": "ACTIVE"}
+      ]
+    }
+  ]
+}
