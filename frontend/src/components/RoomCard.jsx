@@ -1,8 +1,6 @@
 import React from 'react';
-import { 
-  Zap, Power, User, CheckCircle2, AlertTriangle, 
-  ShieldCheck, Cpu, Clock, Sparkles, ChevronRight, Activity 
-} from 'lucide-react';
+import { Cpu, Clock, ChevronRight } from 'lucide-react';
+import Breaker from './Breaker';
 
 export default function RoomCard({
   roomDetail,
@@ -17,172 +15,121 @@ export default function RoomCard({
   const { room, device, active_booking, authorisation, latest_telemetry, active_alerts } = roomDetail;
   const isAuth = authorisation?.authorised ?? false;
   const hasBooking = !!active_booking;
-  const isPaid = active_booking?.payment?.payment_status === 'confirmed';
   const isPending = active_booking?.payment?.payment_status === 'pending';
+  const isPaid = active_booking?.payment?.payment_status === 'confirmed';
   const power = latest_telemetry?.power || 0;
   const hasAlert = (active_alerts || []).length > 0;
   const activeAlert = hasAlert ? active_alerts[0] : null;
 
-  const powerPercent = Math.min(100, Math.round((power / 2.5) * 100));
+  const folio = !hasBooking ? 'No folio' : isPaid ? 'Settled' : 'Pending';
+  const folioTone = !hasBooking ? 'text-ink-3' : isPaid ? 'text-ink' : 'text-brass-ink';
 
   return (
-    <div className={`bg-white border rounded-3xl p-5 transition-all duration-200 flex flex-col justify-between shadow-card hover:shadow-elevation relative overflow-hidden group ${
-      hasAlert 
-        ? 'border-rose-400 ring-2 ring-rose-50 shadow-rose-100' 
-        : isAuth 
-        ? 'border-emerald-200/80 hover:border-emerald-300' 
-        : 'border-slate-200/90'
-    }`}>
-      {hasAlert && (
-        <div className="absolute top-0 inset-x-0 h-1.5 bg-rose-500 animate-pulse" />
-      )}
-
-      <div>
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
+    <div
+      className={`flex flex-col justify-between rounded-card border bg-surface shadow-card transition-colors duration-150 ${
+        hasAlert ? 'border-brick/40' : 'border-line hover:border-line-strong'
+      }`}
+    >
+      <div className="px-4 pt-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xl font-extrabold text-slate-900 tracking-tight font-mono">
+              <span className="font-mono text-[15px] font-medium tracking-tight text-ink">
                 {room.room_code}
               </span>
-              {device && device.device_type === 'AZ3166' && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 flex items-center gap-1">
-                  <Cpu className="h-3 w-3 text-emerald-600" />
-                  <span>Physical Switch</span>
+              {device?.device_type === 'AZ3166' && (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-ink-3">
+                  <Cpu className="h-3 w-3 text-ink-4" />
+                  <span>AZ3166</span>
                 </span>
               )}
             </div>
-            <p className="text-xs font-medium text-slate-400 mt-0.5">
-              {room.display_name}
-            </p>
+            <p className="mt-0.5 truncate text-[11px] text-ink-3">{room.display_name}</p>
           </div>
 
-          <div>
-            {hasAlert ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500 text-white shadow-sm animate-bounce">
-                <AlertTriangle className="h-3 w-3" />
-                <span>UNBILLED DRAW</span>
-              </span>
-            ) : isAuth ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>POWER ENERGIZED</span>
-              </span>
-            ) : isPending ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                <Clock className="h-3 w-3 text-amber-600" />
-                <span>PAYMENT PENDING</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                <span className="h-2 w-2 rounded-full bg-slate-400" />
-                <span>SAFE CUTOFF</span>
-              </span>
-            )}
-          </div>
+          <Breaker on={isAuth} alert={hasAlert} compact />
         </div>
 
-        {hasAlert && activeAlert && (
-          <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="font-extrabold flex items-center gap-1 text-[11px]">
-                <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
-                <span>{activeAlert.alert_type}</span>
-              </span>
+        {activeAlert && (
+          <div className="mt-3 rounded-panel border border-brick/25 bg-brick-soft px-2.5 py-2">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-mono text-[10px] text-brick-ink/80">
+                {activeAlert.alert_type.replace(/_/g, ' ').toLowerCase()}
+              </p>
               <button
                 onClick={() => onAcknowledgeAlert(activeAlert.id)}
-                className="text-[10px] font-bold text-rose-700 hover:text-rose-900 underline"
+                className="text-[10px] text-brick-ink/80 underline decoration-brick/30 underline-offset-2 transition-colors duration-150 hover:text-brick-ink"
               >
                 Clear
               </button>
             </div>
-            <p className="text-[11px] text-rose-800 leading-snug">
-              {activeAlert.description}
-            </p>
+            <p className="mt-1 text-[11px] leading-snug text-brick-ink">{activeAlert.description}</p>
           </div>
         )}
 
-        <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-100 space-y-2 mb-4">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 font-medium">Guest Status</span>
-            <span className="font-extrabold text-slate-800">
-              {hasBooking ? active_booking.guest_label : 'Vacant • Ready'}
-            </span>
+        <dl className="mt-3 divide-y divide-line border-y border-line">
+          <div className="flex items-baseline justify-between py-1.5">
+            <dt className="text-[11px] text-ink-3">Guest</dt>
+            <dd className="ml-3 truncate text-xs font-medium text-ink">
+              {hasBooking ? active_booking.guest_label : 'Vacant'}
+            </dd>
           </div>
-
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 font-medium">Circuit State</span>
-            <span className="font-mono font-bold text-slate-800 text-[11px]">
-              {isAuth ? 'CLOSED (LIVE RELAY)' : 'OPEN (SAFE CUTOFF)'}
-            </span>
+          <div className="flex items-baseline justify-between py-1.5">
+            <dt className="text-[11px] text-ink-3">Folio</dt>
+            <dd className={`ml-3 text-xs font-medium ${folioTone}`}>{folio}</dd>
           </div>
-
-          <div className="pt-2 border-t border-slate-200/60">
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="text-slate-500 font-medium flex items-center gap-1">
-                <Activity className="h-3 w-3 text-slate-400" />
-                <span>Demand Load</span>
-              </span>
-              <span className="font-mono font-extrabold text-slate-900">
-                {power.toFixed(2)} kW
-              </span>
-            </div>
-            <div className="w-full bg-slate-200/70 h-1.5 rounded-full overflow-hidden">
-              <div 
-                className={`h-full rounded-full transition-all duration-500 ${
-                  hasAlert ? 'bg-rose-500' : isAuth ? 'bg-emerald-500' : 'bg-slate-300'
-                }`}
-                style={{ width: `${Math.max(powerPercent, isAuth ? 8 : 0)}%` }}
-              />
-            </div>
+          <div className="flex items-baseline justify-between py-1.5">
+            <dt className="text-[11px] text-ink-3">Demand</dt>
+            <dd className={`num ml-3 font-mono text-xs ${power > 0.05 ? 'text-ink' : 'text-ink-3'}`}>
+              {power.toFixed(2)} kW
+            </dd>
           </div>
-        </div>
+        </dl>
       </div>
 
-      <div className="pt-3 border-t border-slate-100 space-y-2">
+      <div className="px-4 pb-3 pt-3">
         {!hasBooking ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => onCheckIn(roomDetail)}
               disabled={isLoading}
-              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="h-8 flex-1 rounded-control bg-ink px-3 text-xs font-medium text-paper transition-colors duration-150 hover:bg-ink-2 active:scale-[0.99] disabled:opacity-50"
             >
-              <User className="h-3.5 w-3.5" />
-              <span>Check In</span>
+              Check in
             </button>
             <button
               onClick={() => onHousekeeping(room.id)}
               disabled={isLoading}
-              className="py-2.5 px-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="h-8 rounded-control border border-line px-2.5 text-xs text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-50"
+              title="30-minute cleaning access"
             >
-              <Clock className="h-3.5 w-3.5 text-slate-400" />
-              <span>Clean (30m)</span>
+              Clean 30m
             </button>
           </div>
         ) : isPending ? (
           <button
             onClick={() => onConfirmPayment(active_booking.id)}
             disabled={isLoading}
-            className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-control bg-brass-ink px-3 text-xs font-medium text-paper transition-colors duration-150 hover:bg-[#6b4610] active:scale-[0.99] disabled:opacity-50"
           >
-            <Zap className="h-4 w-4" />
-            <span>Verify Payment & Energize Circuit</span>
+            <Clock className="h-3.5 w-3.5" />
+            <span>Take payment, close circuit</span>
           </button>
         ) : (
           <button
             onClick={() => onCheckOut(active_booking.id)}
             disabled={isLoading}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            className="h-8 w-full rounded-control border border-line px-3 text-xs font-medium text-ink transition-colors duration-150 hover:border-line-strong active:scale-[0.99] disabled:opacity-50"
           >
-            <Power className="h-3.5 w-3.5 text-rose-400" />
-            <span>Express Check Out (Cuts Power)</span>
+            Check out, open circuit
           </button>
         )}
 
         <button
           onClick={() => onOpenDetails(room.id)}
-          className="w-full py-1.5 text-center text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition flex items-center justify-center gap-1"
+          className="mt-1 flex h-7 w-full items-center justify-center gap-1 text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink"
         >
-          <span>Room Inspector & Breaker History</span>
+          <span>Inspector</span>
           <ChevronRight className="h-3 w-3" />
         </button>
       </div>

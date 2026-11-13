@@ -24,9 +24,7 @@ import {
   acknowledgeAlert,
   resetDemo,
 } from './api';
-import { 
-  AlertOctagon, Check, LayoutGrid, Table, Sparkles, Building2, ShieldCheck, Zap 
-} from 'lucide-react';
+import { AlertOctagon, LayoutGrid, Table } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('rooms');
@@ -34,6 +32,7 @@ export default function App() {
   const [overview, setOverview] = useState(null);
   const [rooms, setRooms] = useState([]);
   const [telemetryHistory, setTelemetryHistory] = useState([]);
+  const [telemetryRoom, setTelemetryRoom] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [auditEvents, setAuditEvents] = useState([]);
   const [roomFilter, setRoomFilter] = useState('all');
@@ -61,9 +60,13 @@ export default function App() {
       setAlerts(alertsData);
       setAuditEvents(auditData);
 
-      const r204 = roomsData.find(r => r.room.room_code === 'ROOM-204');
-      if (r204) {
-        const telem = await fetchRoomTelemetry(r204.room.id, 30);
+      // Follow the circuit that is actually live, so the trace and its label
+      // agree. Fall back to the AZ3166 room when nothing is authorised.
+      const traced = roomsData.find(r => r.authorisation?.authorised)
+        || roomsData.find(r => r.device?.device_type === 'AZ3166');
+      if (traced) {
+        setTelemetryRoom({ id: traced.room.id, code: traced.room.room_code });
+        const telem = await fetchRoomTelemetry(traced.room.id, 30);
         setTelemetryHistory(telem);
       }
     } catch (err) {
@@ -107,8 +110,10 @@ export default function App() {
   const handleWebSocketMessage = (msg) => {
     const { type, payload } = msg;
 
-    if (type === 'TELEMETRY_UPDATED' && payload.room_code === 'ROOM-204') {
-      setTelemetryHistory((prev) => [...prev, payload].slice(-30));
+    if (type === 'TELEMETRY_UPDATED') {
+      if (payload.room_id === telemetryRoom?.id) {
+        setTelemetryHistory((prev) => [...prev, payload].slice(-30));
+      }
       setRooms((prev) => prev.map(r => {
         if (r.room.id === payload.room_id) {
           return { ...r, latest_telemetry: payload };
@@ -146,15 +151,15 @@ export default function App() {
         await updatePayment(bRes.id, 'confirmed');
         setToast({
           type: 'success',
-          title: 'Guest Checked In & Circuit Energized',
-          message: `${guestLabel} checked in. Workpeg payment hook confirmed and dispatched POWER_ON command.`,
+          title: 'Checked in, circuit closed',
+          message: `${guestLabel} is in. The payment hook confirmed and dispatched POWER_ON.`,
           workpegHook: 'pegpower.on_payment_post_save',
         });
       } else {
         setToast({
           type: 'warning',
-          title: 'Guest Checked In (Payment Pending)',
-          message: `${guestLabel} registered. Power remains safely locked until payment is verified.`,
+          title: 'Checked in, payment pending',
+          message: `${guestLabel} is registered. Power stays locked until the folio settles.`,
           workpegHook: 'pegpower.bookings.create',
         });
       }
@@ -172,8 +177,8 @@ export default function App() {
       await updatePayment(bookingId, 'confirmed');
       setToast({
         type: 'success',
-        title: 'Payment Confirmed • Circuit Closed',
-        message: 'Folio settled. Workpeg webhook evaluated authorization -> Relay switched ON.',
+        title: 'Folio settled, circuit closed',
+        message: 'The payment hook evaluated the authorisation and switched the relay on.',
         workpegHook: 'pegpower.on_payment_post_save',
       });
       await loadState();
@@ -188,8 +193,8 @@ export default function App() {
       await cancelBooking(bookingId);
       setToast({
         type: 'info',
-        title: 'Express Checkout Completed',
-        message: 'Guest departed. Power cutoff automatically triggered to eliminate standby waste.',
+        title: 'Checked out, circuit open',
+        message: 'Guest departed and the circuit opened, so standby draw stops.',
         workpegHook: 'pegpower.authorisation.revoke',
       });
       await loadState();
@@ -213,8 +218,8 @@ export default function App() {
       });
       setToast({
         type: 'info',
-        title: 'Housekeeping Power Enabled',
-        message: 'Temporary 30-minute cleaning circuit access granted. Will auto-expire.',
+        title: 'Housekeeping access granted',
+        message: 'Cleaning circuit open for 30 minutes, then it expires on its own.',
         workpegHook: 'pegpower.override.housekeeping',
       });
       await loadState();
@@ -227,8 +232,8 @@ export default function App() {
     await acknowledgeAlert(alertId, 'Sarah Jenkins (Front Desk)');
     setToast({
       type: 'success',
-      title: 'Incident Resolved',
-      message: 'Circuit anomaly acknowledged and cleared from active alerts log.',
+      title: 'Incident acknowledged',
+      message: 'Cleared from the active incident log.',
     });
     await loadState();
   };
@@ -248,8 +253,8 @@ export default function App() {
       });
       setToast({
         type: targetAuth ? 'success' : 'warning',
-        title: targetAuth ? 'Staff Power Override Activated' : 'Emergency Power Cutoff Enforced',
-        message: `Circuit state manually modified: ${targetAuth ? 'ENERGIZED' : 'SAFE CUTOFF'}.`,
+        title: targetAuth ? 'Staff power override on' : 'Emergency cutoff enforced',
+        message: `Circuit set to ${targetAuth ? 'closed (live)' : 'open (cut off)'}.`,
         workpegHook: 'pegpower.audit.override',
       });
       await loadState();
@@ -264,14 +269,14 @@ export default function App() {
     if (mode === 'FORCE_ROGUE_DRAW') {
       setToast({
         type: 'error',
-        title: 'Rogue Energy Draw Simulated',
-        message: '1.45 kW injected into Room 204. Anomaly detector checking reconciliation...',
+        title: 'Rogue draw injected',
+        message: '1.45 kW into Room 204. The anomaly detector is reconciling.',
       });
     } else {
       setToast({
         type: 'success',
-        title: 'Normal Baseline Restored',
-        message: 'Software simulator reset to standard guest load profile.',
+        title: 'Baseline restored',
+        message: 'The simulator is back on the standard guest load profile.',
       });
     }
   };
@@ -284,8 +289,8 @@ export default function App() {
       setCurrentScenario(null);
       setToast({
         type: 'info',
-        title: 'Demo Data Reset',
-        message: 'Clean demo state restored with initial seed baseline.',
+        title: 'Demo data reset',
+        message: 'Clean seed state restored.',
       });
       await loadState();
     } finally {
@@ -335,8 +340,17 @@ export default function App() {
     return true;
   });
 
+  const liveCircuits = rooms.filter(r => r.authorisation?.authorised).length;
+  const occupiedRooms = rooms.filter(r => !!r.active_booking).length;
+
+  const filterOptions = [
+    { id: 'all', label: 'All rooms', count: rooms.length },
+    { id: 'active', label: 'Live', count: liveCircuits },
+    { id: 'vacant', label: 'Vacant', count: rooms.filter(r => !r.active_booking).length },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex font-sans antialiased selection:bg-emerald-500 selection:text-white">
+    <div className="flex min-h-screen bg-paper text-ink">
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -345,157 +359,121 @@ export default function App() {
         isResetting={isResetting}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto h-screen">
-        <header className="bg-white border-b border-slate-200/90 px-8 py-3.5 sticky top-0 z-30 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
-              GP
-            </div>
-            <div>
-              <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                The Grand Palm Resort & Spa
-              </h1>
-              <p className="text-[11px] font-medium text-slate-400">
-                Front Desk Operations • Smart Energy Access Control
-              </p>
-            </div>
+      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto">
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line bg-paper px-6 py-3 lg:px-8">
+          <div className="min-w-0">
+            <h1 className="truncate text-[13px] font-medium text-ink">
+              The Grand Palm Resort &amp; Spa
+            </h1>
+            <p className="num truncate font-mono text-[10px] text-ink-3">
+              Front desk · {occupiedRooms} occupied · {liveCircuits} of {rooms.length} circuits live
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          <div className="flex items-center gap-4">
+            <span className="hidden items-center gap-2 sm:flex">
+              <span className={`h-1.5 w-1.5 rounded-full ${liveCircuits > 0 ? 'bg-brass' : 'bg-ink-4'}`} />
+              <span className="num font-mono text-[10px] text-ink-2">
+                {telemetryHistory.length > 0 ? 'telemetry 2s' : 'telemetry idle'}
               </span>
-              <span>Workpeg Engine Live</span>
-            </div>
+            </span>
           </div>
         </header>
 
         <PitchRibbon
           onRunScenario={handleRunPitchScenario}
-          onResetDemo={handleResetDemo}
           isResetting={isResetting}
           currentScenario={currentScenario}
         />
 
-        <main className="flex-1 p-8 space-y-6 max-w-7xl w-full mx-auto">
+        <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-5 px-6 py-6 lg:px-8">
           {activeAlerts.length > 0 && activeTab !== 'alerts' && (
-            <div className="p-4 rounded-3xl bg-rose-50 border border-rose-300 text-rose-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-pulse-gentle">
+            <div className="flex flex-col gap-3 rounded-card border border-brick/25 bg-brick-soft px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
-                  <AlertOctagon className="h-5 w-5" />
-                </div>
+                <AlertOctagon className="mt-0.5 h-4 w-4 shrink-0 text-brick-ink" />
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-sm text-rose-900">
-                      Security Incident: Electricity In Use While Unauthorized
-                    </span>
-                    <span className="text-[10px] font-extrabold uppercase bg-rose-600 text-white px-2 py-0.5 rounded-full">
-                      CRITICAL
-                    </span>
-                  </div>
-                  <p className="text-xs text-rose-800 font-medium mt-0.5">
+                  <p className="text-[13px] font-medium text-brick-ink">
+                    Electricity in use with no paid booking
+                  </p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-brick-ink/85">
                     {activeAlerts[0].description}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-3 pl-7 sm:pl-0">
                 <button
                   onClick={() => setActiveTab('alerts')}
-                  className="px-3.5 py-1.5 rounded-xl border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-semibold transition"
+                  className="text-xs text-brick-ink/85 underline decoration-brick/30 underline-offset-2 transition-colors duration-150 hover:text-brick-ink"
                 >
-                  Review Anomaly
+                  Review incident
                 </button>
                 <button
                   onClick={() => handleAcknowledgeAlert(activeAlerts[0].id)}
-                  className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition shadow-sm flex items-center gap-1.5"
+                  className="rounded-control bg-ink px-3 py-1.5 text-xs font-medium text-paper transition-colors duration-150 hover:bg-ink-2"
                 >
-                  <Check className="h-3.5 w-3.5" />
-                  <span>Acknowledge</span>
+                  Acknowledge
                 </button>
               </div>
             </div>
           )}
 
           {activeTab === 'rooms' && (
-            <div className="space-y-6">
+            <div className="animate-rise space-y-6">
               <ExecutiveBento overview={overview} rooms={rooms} />
 
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
+              <div className="flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    Guest Rooms & Power Circuits
-                  </h2>
-                  <p className="text-xs font-medium text-slate-500 mt-0.5">
-                    1-click guest check-in, automated payment power release, and instant checkout cutoff
+                  <h2 className="text-base font-medium text-ink">Rooms &amp; circuits</h2>
+                  <p className="mt-0.5 text-xs text-ink-3">
+                    Check-in releases power, checkout cuts it
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-0.5 rounded-control border border-line bg-surface p-0.5">
                     <button
                       onClick={() => setViewMode('grid')}
-                      className={`p-1.5 rounded-lg text-xs font-semibold transition ${
-                        viewMode === 'grid'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900'
+                      aria-pressed={viewMode === 'grid'}
+                      title="Cards"
+                      className={`flex h-7 w-7 items-center justify-center rounded-[6px] transition-colors duration-150 ${
+                        viewMode === 'grid' ? 'bg-paper text-ink' : 'text-ink-4 hover:text-ink'
                       }`}
-                      title="Grid View"
                     >
                       <LayoutGrid className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => setViewMode('table')}
-                      className={`p-1.5 rounded-lg text-xs font-semibold transition ${
-                        viewMode === 'table'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900'
+                      aria-pressed={viewMode === 'table'}
+                      title="Rack sheet"
+                      className={`flex h-7 w-7 items-center justify-center rounded-[6px] transition-colors duration-150 ${
+                        viewMode === 'table' ? 'bg-paper text-ink' : 'text-ink-4 hover:text-ink'
                       }`}
-                      title="Room Rack Matrix"
                     >
                       <Table className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
-                    <button
-                      onClick={() => setRoomFilter('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        roomFilter === 'all'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      All ({rooms.length})
-                    </button>
-                    <button
-                      onClick={() => setRoomFilter('active')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        roomFilter === 'active'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      Powered ({rooms.filter(r => r.authorisation?.authorised).length})
-                    </button>
-                    <button
-                      onClick={() => setRoomFilter('vacant')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                        roomFilter === 'vacant'
-                          ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      Vacant ({rooms.filter(r => !r.active_booking).length})
-                    </button>
+                  <div className="flex items-center gap-0.5 rounded-control border border-line bg-surface p-0.5">
+                    {filterOptions.map(option => (
+                      <button
+                        key={option.id}
+                        onClick={() => setRoomFilter(option.id)}
+                        aria-pressed={roomFilter === option.id}
+                        className={`flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-xs transition-colors duration-150 ${
+                          roomFilter === option.id ? 'bg-paper text-ink' : 'text-ink-3 hover:text-ink'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className="num font-mono text-[10px] text-ink-4">{option.count}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
 
               {viewMode === 'grid' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {filteredRooms.map(r => (
                     <RoomCard
                       key={r.room.id}
@@ -525,33 +503,45 @@ export default function App() {
           )}
 
           {activeTab === 'energy' && (
-            <EnergyView rooms={rooms} telemetryHistory={telemetryHistory} />
+            <div className="animate-rise">
+              <EnergyView
+                rooms={rooms}
+                telemetryHistory={telemetryHistory}
+                roomCode={telemetryRoom?.code || 'ROOM-204'}
+              />
+            </div>
           )}
 
           {activeTab === 'alerts' && (
-            <AlertsView
-              alerts={alerts}
-              onAcknowledgeAlert={handleAcknowledgeAlert}
-              onOpenRoom={(id) => {
-                setSelectedRoomId(id);
-                setActiveTab('rooms');
-              }}
-              rooms={rooms}
-            />
+            <div className="animate-rise">
+              <AlertsView
+                alerts={alerts}
+                onAcknowledgeAlert={handleAcknowledgeAlert}
+                onOpenRoom={(id) => {
+                  setSelectedRoomId(id);
+                  setActiveTab('rooms');
+                }}
+                rooms={rooms}
+              />
+            </div>
           )}
 
           {activeTab === 'audit' && (
-            <AuditView events={auditEvents} />
+            <div className="animate-rise">
+              <AuditView events={auditEvents} />
+            </div>
           )}
 
           {activeTab === 'tools' && (
-            <DiagnosticsView
-              room204Detail={room204Detail}
-              injectionMode={injectionMode}
-              onSetInjection={handleSetInjection}
-              onResetDemo={handleResetDemo}
-              isResetting={isResetting}
-            />
+            <div className="animate-rise">
+              <DiagnosticsView
+                room204Detail={room204Detail}
+                injectionMode={injectionMode}
+                onSetInjection={handleSetInjection}
+                onResetDemo={handleResetDemo}
+                isResetting={isResetting}
+              />
+            </div>
           )}
         </main>
 
@@ -565,7 +555,7 @@ export default function App() {
 
         <RoomModal
           roomDetail={selectedRoomDetail}
-          telemetryHistory={selectedRoomDetail?.room?.room_code === 'ROOM-204' ? telemetryHistory : []}
+          telemetryHistory={selectedRoomDetail?.room?.id === telemetryRoom?.id ? telemetryHistory : []}
           onClose={() => setSelectedRoomId(null)}
           onManualOverride={handleManualOverride}
           isOverriding={isLoading}

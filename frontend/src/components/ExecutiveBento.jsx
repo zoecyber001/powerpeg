@@ -1,92 +1,60 @@
 import React from 'react';
-import { BedDouble, Zap, ShieldCheck, DollarSign } from 'lucide-react';
 
+/**
+ * Folio-style summary strip: label, figure, and one honest comparison.
+ * No icon tiles, no sparklines, no progress bars dressed up as data.
+ */
 export default function ExecutiveBento({ overview, rooms }) {
-  const totalRooms = rooms.length || 3;
-  const occupiedCount = rooms.filter(r => !!r.active_booking).length;
-  const authorisedCount = rooms.filter(r => r.authorisation?.authorised).length;
-  const totalPower = rooms.reduce((acc, r) => acc + (r.latest_telemetry?.power || 0), 0);
-  const occupancyPercent = Math.round((occupiedCount / totalRooms) * 100);
+  const totalRooms = rooms.length;
+  const occupied = rooms.filter(r => !!r.active_booking).length;
+  const live = rooms.filter(r => r.authorisation?.authorised).length;
+  const pendingFolios = rooms.filter(
+    r => r.active_booking?.payment?.payment_status === 'pending'
+  ).length;
+  const demand = rooms.reduce((sum, r) => sum + (r.latest_telemetry?.power || 0), 0);
+
+  const cells = [
+    {
+      label: 'Rooms occupied',
+      value: totalRooms > 0 ? `${occupied}/${totalRooms}` : '—',
+      note: totalRooms > 0 ? `${Math.round((occupied / totalRooms) * 100)}% of the wing` : 'No rooms on file',
+    },
+    {
+      label: 'Circuits live',
+      value: totalRooms > 0 ? `${live}` : '—',
+      note: `${totalRooms - live} cut off at the relay`,
+    },
+    {
+      label: 'Live demand',
+      value: demand.toFixed(2),
+      unit: 'kW',
+      note: occupied > 0 ? 'Across rooms drawing now' : 'Nothing drawing',
+    },
+    {
+      label: 'Folios pending',
+      value: `${pendingFolios}`,
+      note: pendingFolios > 0 ? 'Power held until settled' : 'All settled',
+      tone: pendingFolios > 0 ? 'brass' : 'ink',
+    },
+  ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-card">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-slate-500">Property Occupancy</span>
-          <div className="h-8 w-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-            <BedDouble className="h-4 w-4" />
-          </div>
+    <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface shadow-card lg:grid-cols-4">
+      {cells.map((cell, index) => (
+        <div
+          key={cell.label}
+          className={`px-4 py-3.5 ${index > 0 ? 'border-l border-line' : ''} ${index === 2 ? 'max-lg:border-t max-lg:border-l-0' : ''} ${index === 3 ? 'max-lg:border-t' : ''}`}
+        >
+          <p className="text-[11px] text-ink-3">{cell.label}</p>
+          <p className="mt-1 flex items-baseline gap-1">
+            <span className={`num font-mono text-[22px] leading-none tracking-tight ${cell.tone === 'brass' ? 'text-brass-ink' : 'text-ink'}`}>
+              {cell.value}
+            </span>
+            {cell.unit && <span className="font-mono text-[11px] text-ink-3">{cell.unit}</span>}
+          </p>
+          <p className="mt-1.5 text-[11px] text-ink-3">{cell.note}</p>
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            {occupiedCount} / {totalRooms}
-          </span>
-          <span className="text-xs font-bold text-slate-500">({occupancyPercent}%)</span>
-        </div>
-        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 overflow-hidden">
-          <div 
-            className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-            style={{ width: `${occupancyPercent}%` }}
-          />
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-card">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-slate-500">Electricity Enabled</span>
-          <div className="h-8 w-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <ShieldCheck className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            {authorisedCount}
-          </span>
-          <span className="text-xs font-medium text-slate-500">of {totalRooms} rooms powered</span>
-        </div>
-        <div className="flex items-center gap-2 mt-3 text-[11px] text-emerald-700 font-semibold">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Checkout cutoff armed</span>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-card">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-slate-500">Live Active Demand</span>
-          <div className="h-8 w-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Zap className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-2xl font-extrabold text-slate-900 font-mono tracking-tight">
-            {totalPower.toFixed(2)}
-          </span>
-          <span className="text-xs font-bold text-slate-500">kW</span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-3 text-[11px] text-slate-400">
-          <span>Continuous software telemetry</span>
-        </div>
-      </div>
-
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-card">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-semibold text-slate-500">Unbilled Waste Prevented</span>
-          <div className="h-8 w-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-            <DollarSign className="h-4 w-4" />
-          </div>
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            $38.50
-          </span>
-          <span className="text-xs font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">
-            Auto Cutoff
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-3 text-[11px] text-slate-400">
-          <span>Zero power wasted post-checkout</span>
-        </div>
-      </div>
+      ))}
     </div>
   );
 }

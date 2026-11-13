@@ -4,21 +4,32 @@
 
 @layer base {
   body {
-    @apply bg-[#F8FAFC] text-slate-800 font-sans antialiased;
+    @apply bg-paper text-ink font-sans antialiased;
+  }
+
+  /* One visible focus ring, everywhere, in ink rather than a color. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ink/70 ring-offset-2 ring-offset-paper;
+  }
+
+  /* Figures line up in every column on every screen. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #D2C9BD;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #B8AEA1;
 }

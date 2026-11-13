@@ -1,8 +1,6 @@
 import React from 'react';
-import { 
-  Zap, Power, ShieldCheck, AlertTriangle, Cpu, User, 
-  CreditCard, Clock, ChevronRight, CheckCircle2 
-} from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import Breaker from './Breaker';
 
 export default function RoomRackTable({
   rooms,
@@ -14,34 +12,25 @@ export default function RoomRackTable({
   isLoading
 }) {
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl shadow-card overflow-hidden">
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-extrabold text-slate-900">
-            Property Room Rack & Circuit Matrix
-          </h3>
-          <p className="text-[11px] text-slate-400">
-            Synchronized with Workpeg table registry
-          </p>
-        </div>
-        <span className="text-xs font-semibold text-slate-500">
-          {rooms.length} Total Units
-        </span>
+    <div className="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div className="flex items-baseline justify-between border-b border-line px-4 py-2.5">
+        <h3 className="text-xs font-medium text-ink">Room rack</h3>
+        <span className="num font-mono text-[10px] text-ink-3">{rooms.length} units</span>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
+        <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              <th className="py-3 px-4">Room & Unit</th>
-              <th className="py-3 px-4">Guest Reservation</th>
-              <th className="py-3 px-4">Billing & Folio</th>
-              <th className="py-3 px-4">Circuit Relay</th>
-              <th className="py-3 px-4">Live Load</th>
-              <th className="py-3 px-4 text-right">Actions</th>
+            <tr className="border-b border-line text-[11px] text-ink-3">
+              <th className="px-4 py-2 font-normal">Room</th>
+              <th className="px-4 py-2 font-normal">Guest</th>
+              <th className="px-4 py-2 font-normal">Folio</th>
+              <th className="px-4 py-2 font-normal">Circuit</th>
+              <th className="px-4 py-2 font-normal">Load</th>
+              <th className="px-4 py-2 text-right font-normal">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+          <tbody className="divide-y divide-line">
             {rooms.map((r) => {
               const { room, device, active_booking, authorisation, latest_telemetry, active_alerts } = r;
               const isAuth = authorisation?.authorised ?? false;
@@ -49,130 +38,113 @@ export default function RoomRackTable({
               const isPaid = active_booking?.payment?.payment_status === 'confirmed';
               const isPending = active_booking?.payment?.payment_status === 'pending';
               const power = latest_telemetry?.power || 0;
+              const loadPercent = Math.min(100, Math.round((power / 2.5) * 100));
 
               return (
-                <tr 
+                <tr
                   key={room.id}
-                  className={`hover:bg-slate-50/60 transition ${hasAlert ? 'bg-rose-50/30' : ''}`}
+                  className={`transition-colors duration-150 ${
+                    hasAlert ? 'bg-brick-soft/50' : 'hover:bg-paper/70'
+                  }`}
                 >
-                  <td className="py-3.5 px-4">
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-sm text-slate-900 font-mono">
-                        {room.room_code}
-                      </span>
+                      <span className="font-mono text-[13px] font-medium text-ink">{room.room_code}</span>
                       {device?.device_type === 'AZ3166' && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                          <Cpu className="h-2.5 w-2.5" />
-                          <span>IoT Node</span>
-                        </span>
+                        <span className="font-mono text-[10px] text-ink-4">AZ3166</span>
                       )}
                     </div>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">
-                      {room.display_name}
-                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-ink-3">{room.display_name}</span>
                   </td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="px-4 py-2.5">
                     {active_booking ? (
-                      <div>
-                        <span className="font-bold text-slate-800 block">
-                          {active_booking.guest_label}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          Booking #{active_booking.id}
-                        </span>
+                      <div className="min-w-0">
+                        <span className="block truncate text-xs text-ink">{active_booking.guest_label}</span>
+                        <span className="num block font-mono text-[10px] text-ink-4">#{active_booking.id}</span>
                       </div>
                     ) : (
-                      <span className="text-slate-400 text-xs italic">Vacant</span>
+                      <span className="text-xs text-ink-3">Vacant</span>
                     )}
                   </td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="px-4 py-2.5">
                     {active_booking ? (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                        isPaid 
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}>
-                        {isPaid ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                        {isPaid ? 'Settled ($150)' : 'Pending Settle'}
+                      <span className={`text-xs ${isPaid ? 'text-ink' : 'text-brass-ink'}`}>
+                        {isPaid ? 'Settled' : 'Pending'}
                       </span>
                     ) : (
-                      <span className="text-slate-400 text-xs">—</span>
+                      <span className="text-xs text-ink-4">—</span>
                     )}
                   </td>
 
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${
-                        isAuth ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
-                      }`} />
-                      <span className={`font-bold ${
-                        isAuth ? 'text-emerald-700' : 'text-slate-500'
-                      }`}>
-                        {isAuth ? 'ENERGIZED [ON]' : 'SAFE CUTOFF [OFF]'}
-                      </span>
-                    </div>
+                  <td className="px-4 py-2.5">
+                    <Breaker on={isAuth} alert={hasAlert} compact />
                     {authorisation?.reason && (
-                      <span className="text-[10px] text-slate-400 block truncate max-w-[150px]">
+                      <span className="mt-0.5 block max-w-[170px] truncate text-[10px] text-ink-4">
                         {authorisation.reason}
                       </span>
                     )}
                   </td>
 
-                  <td className="py-3.5 px-4 font-mono">
-                    <span className={`font-bold ${power > 0.05 ? 'text-slate-900' : 'text-slate-400'}`}>
-                      {power.toFixed(2)} kW
-                    </span>
-                    <span className="text-[10px] text-slate-400 block">
-                      {power > 0.05 ? 'Active load' : 'Zero standby'}
-                    </span>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`num font-mono text-xs ${power > 0.05 ? 'text-ink' : 'text-ink-3'}`}>
+                        {power.toFixed(2)}
+                      </span>
+                      <span className="h-1 w-14 overflow-hidden rounded-full bg-line">
+                        <span
+                          className={`block h-full transition-[width] duration-300 ${hasAlert ? 'bg-brick' : isAuth ? 'bg-brass' : 'bg-ink-4'}`}
+                          style={{ width: `${loadPercent}%` }}
+                        />
+                      </span>
+                    </div>
                   </td>
 
-                  <td className="py-3.5 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-3">
                       {!active_booking ? (
                         <>
                           <button
                             onClick={() => onCheckIn(r)}
                             disabled={isLoading}
-                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm"
+                            className="text-xs font-medium text-ink underline decoration-line-strong underline-offset-2 transition-colors duration-150 hover:decoration-ink disabled:opacity-50"
                           >
-                            Check In
+                            Check in
                           </button>
                           <button
                             onClick={() => onHousekeeping(room.id)}
                             disabled={isLoading}
-                            className="px-2 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition"
-                            title="30m cleaning override"
+                            className="text-xs text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-50"
+                            title="30-minute cleaning access"
                           >
-                            Clean (30m)
+                            Clean
                           </button>
                         </>
                       ) : isPending ? (
                         <button
                           onClick={() => onConfirmPayment(active_booking.id)}
                           disabled={isLoading}
-                          className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition shadow-sm"
+                          className="text-xs font-medium text-brass-ink underline decoration-brass/40 underline-offset-2 transition-colors duration-150 hover:decoration-brass-ink disabled:opacity-50"
                         >
-                          Settle & Energize
+                          Take payment
                         </button>
                       ) : (
                         <button
                           onClick={() => onCheckOut(active_booking.id)}
                           disabled={isLoading}
-                          className="px-3 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-xs transition"
+                          className="text-xs text-ink-2 transition-colors duration-150 hover:text-ink disabled:opacity-50"
                         >
-                          Express Check Out
+                          Check out
                         </button>
                       )}
 
                       <button
                         onClick={() => onOpenDetails(room.id)}
-                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
-                        title="Room Inspector"
+                        className="rounded-[6px] p-1 text-ink-4 transition-colors duration-150 hover:bg-paper hover:text-ink"
+                        title="Inspector"
                       >
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </td>

@@ -1,6 +1,6 @@
 import React from 'react';
-import { 
-  Building2, BedDouble, Zap, AlertTriangle, History, Sliders, ChevronDown, CheckCircle2
+import {
+  BedDouble, Zap, AlertTriangle, History, Sliders, Building2, RotateCcw
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -11,45 +11,33 @@ export default function Sidebar({
   isResetting
 }) {
   const navItems = [
-    { id: 'rooms', label: 'Rooms & Power', icon: BedDouble },
-    { id: 'energy', label: 'Energy Analytics', icon: Zap },
+    { id: 'rooms', label: 'Rooms & power', icon: BedDouble },
+    { id: 'energy', label: 'Energy', icon: Zap },
     { id: 'alerts', label: 'Incidents', icon: AlertTriangle, count: activeAlertCount },
-    { id: 'audit', label: 'Audit Trail', icon: History },
-    { id: 'tools', label: 'Switch Diagnostics', icon: Sliders },
+    { id: 'audit', label: 'Audit trail', icon: History },
+    { id: 'tools', label: 'Switch diagnostics', icon: Sliders },
   ];
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none">
+    <aside className="w-[248px] shrink-0 select-none border-r border-line bg-surface flex flex-col justify-between">
       <div>
-        <div className="p-5 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-emerald-600 flex items-center justify-center shadow-md shadow-emerald-600/20">
-              <Zap className="h-5 w-5 text-white fill-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-base tracking-tight text-slate-900">PegPower</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                  PMS
-                </span>
-              </div>
-              <p className="text-[11px] font-medium text-slate-400">Power Access Platform</p>
-            </div>
+        <div className="px-5 pt-5 pb-4">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[15px] font-medium tracking-tight text-ink">PegPower</span>
+            <span className="font-mono text-[10px] text-ink-4">PMS</span>
           </div>
+          <p className="mt-0.5 text-[11px] text-ink-3">Room power, tied to the folio</p>
+        </div>
 
-          <div className="mt-4 p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <Building2 className="h-4 w-4 text-slate-500 shrink-0" />
-              <div className="truncate">
-                <p className="text-xs font-bold text-slate-800 truncate">The Grand Palm</p>
-                <p className="text-[10px] text-slate-400">Ocean Wing • 3 Rooms</p>
-              </div>
-            </div>
-            <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+        <div className="mx-5 mb-5 flex items-center gap-2 border-t border-line pt-4">
+          <Building2 className="h-4 w-4 shrink-0 text-ink-4" />
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-ink">The Grand Palm</p>
+            <p className="num truncate font-mono text-[10px] text-ink-3">Ocean Wing · 3 rooms</p>
           </div>
         </div>
 
-        <nav className="p-3 space-y-1">
+        <nav aria-label="Sections" className="px-3">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -57,20 +45,19 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`mb-0.5 flex h-9 w-full items-center justify-between rounded-control px-2.5 text-[13px] transition-colors duration-150 ${
                   isActive
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/60 shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-paper text-ink shadow-card'
+                    : 'text-ink-2 hover:bg-paper hover:text-ink'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`h-4 w-4 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span className="flex items-center gap-2.5">
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? 'text-ink' : 'text-ink-4'}`} />
                   <span>{item.label}</span>
-                </div>
+                </span>
                 {item.count > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500 text-white animate-pulse">
-                    {item.count}
-                  </span>
+                  <span className="num font-mono text-[11px] text-brick-ink">{item.count}</span>
                 )}
               </button>
             );
@@ -78,24 +65,24 @@ export default function Sidebar({
         </nav>
       </div>
 
-      <div className="p-4 border-t border-slate-100 space-y-3">
-        <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50">
-          <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-700">
+      <div className="border-t border-line px-3 py-3">
+        <div className="flex items-center gap-2.5 px-2.5 py-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line bg-paper font-mono text-[10px] text-ink-2">
             SJ
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-ink">Sarah Jenkins</p>
+            <p className="truncate text-[11px] text-ink-3">Front desk manager</p>
           </div>
-          <div className="truncate flex-1">
-            <p className="text-xs font-bold text-slate-800 truncate">Sarah Jenkins</p>
-            <p className="text-[10px] text-slate-400">Front Desk Manager</p>
-          </div>
-          <span className="h-2 w-2 rounded-full bg-emerald-500 ring-4 ring-emerald-100" />
         </div>
 
         <button
           onClick={onResetDemo}
           disabled={isResetting}
-          className="w-full py-2 px-3 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-medium transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+          className="mt-1 flex h-8 w-full items-center justify-center gap-2 rounded-control border border-line text-[11px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-50"
         >
-          <span>Reset Demo Data</span>
+          <RotateCcw className={`h-3 w-3 ${isResetting ? 'animate-spin' : ''}`} />
+          <span>{isResetting ? 'Resetting' : 'Reset demo data'}</span>
         </button>
       </div>
     </aside>

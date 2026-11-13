@@ -7,31 +7,50 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'],
+        // Instruments, not SaaS: IBM Plex was drawn for machine-facing interfaces.
+        sans: ['"IBM Plex Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        brand: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          500: '#10b981',
-          600: '#059669',
-          700: '#047857',
-          900: '#064e3b',
-        },
-        surface: {
-          50: '#F8FAFC',
-          100: '#F1F5F9',
-          200: '#E2E8F0',
-          300: '#CBD5E1',
-          card: '#FFFFFF',
-        }
+        // One warm neutral ramp, tinted toward paper and graphite ink.
+        paper: '#F4F1EC',
+        surface: '#FFFFFF',
+        ink: '#1D1B17',
+        'ink-2': '#57514A',
+        'ink-3': '#6F6960',
+        'ink-4': '#9C948A',
+        line: '#E5DFD6',
+        'line-strong': '#D2C9BD',
+        // The single accent: the amber of a live indicator lamp.
+        brass: '#A9721C',
+        'brass-soft': '#F4EAD8',
+        'brass-ink': '#7C5210',
+        // Semantics only: a real incident, and a settled folio.
+        brick: '#9E3B2E',
+        'brick-soft': '#F7E9E5',
+        'brick-ink': '#7E2C21',
+        moss: '#3F6B52',
+        'moss-soft': '#E8EFE9',
+      },
+      borderRadius: {
+        control: '8px',
+        panel: '10px',
+        card: '12px',
       },
       boxShadow: {
-        card: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03)',
-        elevation: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
-        glow: '0 0 15px -3px rgba(16, 185, 129, 0.25)',
-      }
+        // Hairlines carry the depth; these are the only shadows in the system.
+        card: '0 1px 0 0 rgba(29, 27, 23, 0.04)',
+        pop: '0 12px 32px -12px rgba(29, 27, 23, 0.28)',
+      },
+      keyframes: {
+        rise: {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'none' },
+        },
+      },
+      animation: {
+        rise: 'rise 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both',
+      },
     },
   },
   plugins: [],

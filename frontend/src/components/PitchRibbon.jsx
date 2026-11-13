@@ -1,12 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  Sparkles, CheckCircle2, Power, AlertTriangle, Clock, 
-  RotateCcw, ChevronDown, ChevronUp, Play, Zap, ShieldCheck
-} from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export default function PitchRibbon({
   onRunScenario,
-  onResetDemo,
   isResetting,
   currentScenario
 }) {
@@ -15,104 +11,74 @@ export default function PitchRibbon({
   const scenarios = [
     {
       id: 'CHECK_IN_FLOW',
-      title: '1. Check-In & Power Release',
-      desc: 'Guest checks in & pays -> Workpeg hook triggers -> AZ3166 relay closes -> Power ON',
-      icon: Zap,
-      color: 'emerald'
+      title: 'Check-in and power release',
+      desc: 'Guest checks in, folio settles, relay closes',
     },
     {
       id: 'CHECK_OUT_FLOW',
-      title: '2. Express Checkout Cutoff',
-      desc: 'Guest departs -> Circuit instantly cuts power -> Halts standby waste',
-      icon: Power,
-      color: 'slate'
+      title: 'Express checkout cutoff',
+      desc: 'Guest leaves, circuit opens, standby draw ends',
     },
     {
       id: 'ROGUE_DRAW_ALERT',
-      title: '3. Rogue Power Anomaly',
-      desc: 'Injects 1.45 kW into vacant Room 204 -> Workpeg raises critical security alert in < 2s',
-      icon: AlertTriangle,
-      color: 'rose'
+      title: 'Rogue draw on 204',
+      desc: '1.45 kW injected into a vacant, unpaid room',
     },
     {
       id: 'HOUSEKEEPING_OVERRIDE',
-      title: '4. Housekeeping (30m)',
-      desc: 'Staff cleaning power override with 30-min auto-expiration countdown',
-      icon: Clock,
-      color: 'amber'
-    }
+      title: 'Housekeeping override',
+      desc: '30-minute cleaning access, self-expiring',
+    },
   ];
 
   return (
-    <div className="bg-white border-b border-slate-200/90 shadow-sm relative z-20">
-      <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Interactive Pitch Scenarios</span>
-          </span>
-          <span className="hidden md:inline-block text-[11px] font-medium text-slate-400">
-            • 1-click end-to-end user stories for judges
+    <div className="border-b border-line bg-surface">
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-2 lg:px-8">
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-[10px] text-ink-4">DEMO</span>
+          <span className="text-xs text-ink-2">
+            Scripted scenarios for the walkthrough
+            {isResetting ? ' · resetting' : ''}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onResetDemo}
-            disabled={isResetting}
-            className="px-3 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition flex items-center gap-1.5 disabled:opacity-50"
-          >
-            <RotateCcw className={`h-3 w-3 ${isResetting ? 'animate-spin' : ''}`} />
-            <span>Reset Demo</span>
-          </button>
-
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
-          >
-            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </button>
-        </div>
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          aria-expanded={!isCollapsed}
+          className="flex items-center gap-1 rounded-control px-1.5 py-1 text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink"
+        >
+          <span>{isCollapsed ? 'Show' : 'Hide'}</span>
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-150 ${isCollapsed ? '' : 'rotate-180'}`} />
+        </button>
       </div>
 
       {!isCollapsed && (
-        <div className="max-w-7xl mx-auto px-6 pb-3 pt-1">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {scenarios.map((sc) => {
-              const Icon = sc.icon;
+        <div className="mx-auto max-w-[1400px] px-6 pb-3 lg:px-8">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+            {scenarios.map((sc, index) => {
               const isActive = currentScenario === sc.id;
-
               return (
                 <button
                   key={sc.id}
                   onClick={() => onRunScenario(sc.id)}
-                  className={`p-2.5 rounded-xl border text-left transition flex items-start gap-2.5 ${
+                  aria-pressed={isActive}
+                  className={`flex items-start gap-2.5 rounded-panel border px-3 py-2 text-left transition-colors duration-150 ${
                     isActive
-                      ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-100 shadow-sm'
-                      : 'bg-slate-50/70 hover:bg-white border-slate-200/90 hover:border-slate-300 hover:shadow-sm'
+                      ? 'border-brass/40 bg-brass-soft'
+                      : 'border-line bg-surface hover:border-line-strong'
                   }`}
                 >
-                  <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                    sc.color === 'emerald' ? 'bg-emerald-100 text-emerald-700' :
-                    sc.color === 'rose' ? 'bg-rose-100 text-rose-700' :
-                    sc.color === 'amber' ? 'bg-amber-100 text-amber-700' :
-                    'bg-slate-200 text-slate-700'
-                  }`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-extrabold text-xs text-slate-900 truncate">
-                        {sc.title}
-                      </span>
-                      <Play className="h-2.5 w-2.5 text-slate-400 shrink-0" />
-                    </div>
-                    <p className="text-[10px] text-slate-500 leading-tight mt-0.5 line-clamp-2">
+                  <span className={`num mt-[1px] font-mono text-[11px] ${isActive ? 'text-brass-ink' : 'text-ink-4'}`}>
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={`block text-xs font-medium ${isActive ? 'text-brass-ink' : 'text-ink'}`}>
+                      {sc.title}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-snug text-ink-3">
                       {sc.desc}
-                    </p>
-                  </div>
+                    </span>
+                  </span>
                 </button>
               );
             })}

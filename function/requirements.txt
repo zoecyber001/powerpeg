@@ -1,2 +1,3 @@
-workpeg>=0.153.0
+# The workpeg runtime comes from the function base image, not from PyPI:
+# upstream builds functions without internet access, so it cannot be installed here.
 requests>=2.31.0

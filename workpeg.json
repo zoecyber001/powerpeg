@@ -1,8 +1,8 @@
 {
   "name": "PegPower",
   "namespace": "pegpower",
-  "version": "1.0.0",
-  "description": "Smart electricity access control and monitoring platform linking room booking and payment authorisation to physical power supply.",
+  "version": "1.0.1",
+  "description": "Smart electricity access control and monitoring demo for the Workpeg hackathon. Room booking + simulated payment authorisation drive virtual power commands to a room's assigned controller, while a software electrical simulator streams labelled sample readings.",
   "author": "PegPower Hackathon Team",
   "function": {
     "entrypoint": "app.main:main",
@@ -23,23 +23,76 @@
   "tables": [
     {
       "name": "rooms",
-      "description": "Room inventory and controller assignment",
+      "description": "Room inventory and controller assignment.",
       "columns": [
-        {"name": "room_code", "type": "string", "required": true},
-        {"name": "display_name", "type": "string", "required": true},
-        {"name": "status", "type": "string", "default": "available"},
-        {"name": "assigned_device_id", "type": "string"}
+        {
+          "name": "room_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "display_name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "default": "available"
+        },
+        {
+          "name": "assigned_device_id",
+          "type": "string"
+        },
+        {
+          "name": "authorised",
+          "type": "boolean",
+          "default": false
+        },
+        {
+          "name": "authorised_reason",
+          "type": "string"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime"
+        }
       ]
     },
     {
       "name": "bookings",
-      "description": "Guest reservations and stay access windows",
+      "description": "Guest reservations and stay access windows.",
       "columns": [
-        {"name": "room_code", "type": "string", "required": true},
-        {"name": "guest_label", "type": "string", "required": true},
-        {"name": "start_at", "type": "datetime", "required": true},
-        {"name": "end_at", "type": "datetime", "required": true},
-        {"name": "booking_status", "type": "string", "default": "confirmed"}
+        {
+          "name": "booking_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "room_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "guest_label",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "start_at",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end_at",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "booking_status",
+          "type": "string",
+          "default": "confirmed"
+        }
       ],
       "hooks": {
         "post_save": "pegpower.on_booking_post_save"
@@ -47,12 +100,37 @@
     },
     {
       "name": "payments",
-      "description": "Simulated booking payments",
+      "description": "Simulated booking payments.",
       "columns": [
-        {"name": "booking_id", "type": "string", "required": true},
-        {"name": "payment_status", "type": "string", "required": true},
-        {"name": "amount", "type": "number", "default": 150.0},
-        {"name": "is_simulated", "type": "boolean", "default": true}
+        {
+          "name": "payment_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "booking_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "payment_status",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "default": 150.0
+        },
+        {
+          "name": "is_simulated",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime"
+        }
       ],
       "hooks": {
         "post_save": "pegpower.on_payment_post_save"
@@ -60,26 +138,110 @@
     },
     {
       "name": "devices",
-      "description": "Registered IoT controllers (MXChip AZ3166 & virtual nodes)",
+      "description": "Registered IoT controllers (MXChip AZ3166 physical kit and virtual nodes).",
       "columns": [
-        {"name": "device_code", "type": "string", "required": true},
-        {"name": "room_code", "type": "string"},
-        {"name": "connection_status", "type": "string", "default": "offline"},
-        {"name": "reported_relay_state", "type": "string", "default": "OFF"},
-        {"name": "last_seen_at", "type": "datetime"}
+        {
+          "name": "device_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "room_code",
+          "type": "string"
+        },
+        {
+          "name": "device_type",
+          "type": "string",
+          "default": "AZ3166"
+        },
+        {
+          "name": "connection_status",
+          "type": "string",
+          "default": "offline"
+        },
+        {
+          "name": "reported_relay_state",
+          "type": "string",
+          "default": "OFF"
+        },
+        {
+          "name": "last_seen_at",
+          "type": "datetime"
+        }
+      ]
+    },
+    {
+      "name": "commands",
+      "description": "Queued power commands issued to a device.",
+      "columns": [
+        {
+          "name": "command_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "device_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "default": "PENDING"
+        },
+        {
+          "name": "issued_at",
+          "type": "datetime"
+        },
+        {
+          "name": "delivered_at",
+          "type": "datetime"
+        },
+        {
+          "name": "acknowledged_at",
+          "type": "datetime"
+        }
       ]
     },
     {
       "name": "telemetry",
-      "description": "Virtual software electrical readings (V, I, kW, kWh)",
+      "description": "Virtual software electrical readings (V, I, kW, kWh), labelled as simulated.",
       "columns": [
-        {"name": "room_code", "type": "string", "required": true},
-        {"name": "voltage", "type": "number"},
-        {"name": "current", "type": "number"},
-        {"name": "power", "type": "number"},
-        {"name": "energy", "type": "number"},
-        {"name": "is_simulated", "type": "boolean", "default": true},
-        {"name": "observed_at", "type": "datetime"}
+        {
+          "name": "room_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "voltage",
+          "type": "number"
+        },
+        {
+          "name": "current",
+          "type": "number"
+        },
+        {
+          "name": "power",
+          "type": "number"
+        },
+        {
+          "name": "energy",
+          "type": "number"
+        },
+        {
+          "name": "is_simulated",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "name": "observed_at",
+          "type": "datetime"
+        }
       ],
       "hooks": {
         "post_save": "pegpower.on_telemetry_post_save"
@@ -87,13 +249,38 @@
     },
     {
       "name": "alerts",
-      "description": "Cross-reconciliation anomaly alerts",
+      "description": "Cross-reconciliation anomaly alerts.",
       "columns": [
-        {"name": "room_code", "type": "string", "required": true},
-        {"name": "alert_type", "type": "string", "required": true},
-        {"name": "severity", "type": "string", "default": "WARNING"},
-        {"name": "description", "type": "string", "required": true},
-        {"name": "status", "type": "string", "default": "ACTIVE"}
+        {
+          "name": "alert_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "room_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "alert_type",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "severity",
+          "type": "string",
+          "default": "WARNING"
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "default": "ACTIVE"
+        }
       ]
     }
   ]
