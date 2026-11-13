@@ -80,7 +80,14 @@ powerpeg/
 ├── ui/                # Workpeg-native UI (Python → JS via workpeg ui build)
 ├── frontend/          # Old React dashboard prototype (artifact)
 ├── docs/
+│   ├── 000-phase0-feasibility-and-architecture.md
 │   └── 001-pegpower-system-architecture.md
 ├── workpeg.json       # Peg manifest
 └── README.md
 ```
+
+## Two things on the side
+
+**Face/identity verification (didit.me and similar).** Not in this peg. The rule is: keep identity verification separate from booking, payment, check-in approval, and device activation; staff review/escalation; protect sensitive identity data; the peg does not hold provider secrets. For Nigeria the noted recommendation is Didit (free tier, NIN/BVN native) with Dojah as fallback — the operator's own server calls the verification provider, and the peg reads whatever that server writes into a table. It's a decision + server-side integration, not code in this peg yet.
+
+**Other pegs (separate publish + approval).** This repo also contains `quickpass-ng/`, which is its own Workpeg peg (its own namespace + manifest), separate from `pegpower`. Any independently published peg goes through the Workpeg publish path: register the peg on `developers.workpeg.com` (reviewed, can take up to three working days), generate an upload token as `WORKPEG_PK` (never in the peg), then submit the function and the built UI manifest. Whole-Peg publish is documented but not runnable yet, so each half currently ships through its own command. Those pegs are not in this commit.
