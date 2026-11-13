@@ -1,138 +1,86 @@
 # PegPower
 
-> **Smart electricity access control and monitoring platform linking room booking and payment authorisation to physical power supply, correlating device state and simulated electrical telemetry with an immutable audit trail.**
+Hospitality operating platform — room booking, guest check-in, room-power control, and the module framework that ties them together.
 
-Built for the **PegPower Hackathon Prototype Specification (v1.0)**.
-
----
-
-## ⚡ Executive Architecture & Prototype Boundaries
-
-PegPower continuously reconciles three independent state vectors:
-1. **Authorisation State:** Evaluated by the core engine based on room booking, simulated payment status, and the stay access window.
-2. **Device State:** Reported by the **MXChip AZ3166 IoT DevKit** (the sole physical controller in scope) over Wi-Fi, reporting connection heartbeats and firmware-level simulated relay status (`ON` / `OFF`).
-3. **Telemetry State:** Generated independently by the software electrical simulation service (voltage, current, active power, and accumulated kWh).
-
-```
-                          ┌────────────────────────────────────────┐
-                          │         React + Vite Dashboard         │
-                          │   (Tailwind, Lucide, Recharts, WS)     │
-                          └───────────────────▲────────────────────┘
-                                              │ REST + WebSocket
-                                              ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 FastAPI Core Engine                                    │
-│                                                                                        │
-│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────────────┐  │
-│  │ Authorisation Engine │  │ Command Dispatcher   │  │ Conflict & Anomaly Detector  │  │
-│  │ (Rules & Lifecycle)  │  │ (Queue & ACK Tracker)│  │ (Vector Cross-Reconciliation)│  │
-│  └──────────┬───────────┘  └──────────┬───────────┘  └──────────────▲───────────────┘  │
-│             │                         │                             │                  │
-│  ┌──────────▼─────────────────────────▼─────────────────────────────┴───────────────┐  │
-│  │                    Database Layer (SQLite Async / PostgreSQL)                    │  │
-│  │       Rooms | Bookings | Devices | Commands | Telemetry | Alerts | Audit Log     │  │
-│  └────────────────────────────────────▲─────────────────────────────▲───────────────┘  │
-└───────────────────────────────────────┼─────────────────────────────┼──────────────────┘
-                                        │                             │
-                     HTTP REST (Poll/Heartbeat/ACK)            Internal Telemetry Ingest
-                                        │                             │
-             ┌──────────────────────────┴────────┐         ┌──────────┴──────────────────┐
-             │       MXChip AZ3166 DevKit        │         │ Virtual Electrical Engine   │
-             │   - Wi-Fi Station (HTTP Client)   │         │ - Configurable Loads        │
-             │   - OLED Status Display           │         │ - Telemetry (V, I, P, kWh)  │
-             │   - RGB LED Indicator             │         │ - Injection: Bypass/Anomaly │
-             │   - Firmware Simulated Relay      │         │ - Multi-Room Simulation     │
-             └───────────────────────────────────┘         └─────────────────────────────┘
-```
-
-> **Hardware Truth & Safety Rule (PRD Section 8.4):** The AZ3166 maintains an internal firmware-level relay state and does **not** switch live mains electricity or measure room current. All electrical telemetry is produced by the independent simulation service and is explicitly labelled as `[SIMULATED]` across the API and UI.
+This repo is one Workpeg Peg (`pegpower`, v1.0.2): a function plus a Workpeg-native UI, with an internal module model for QuickPass, Bookings, RoomPower, Guest Hub, Deals, and Property Ops.
 
 ---
 
-## 📁 Repository Structure
+## What's in here
+
+- **Function** — `function/app/main.py`. The backend logic: modules, per-business activation, authorization events, and the preserved check-in / room-power flows. Runs through `workpeg function`.
+- **UI** — `ui/main.py` (compiled by `workpeg ui build ui/` into `ui/dist`). A business-scoped Workpeg app under `/b/[business_id]`, with pages for overview, bookings, booking detail, room power, quick pass, and guarded module routes.
+- **Manifest** — `workpeg.json`. One peg, 13 tables, `dev: { "others": "deny" }`.
+- **Docs** — `docs/001-pegpower-system-architecture.md`.
+
+The old single-page React dashboard lives in `frontend/`. It is a prototype artifact; the active work is the Workpeg peg above.
+
+---
+
+## Quick start
+
+**Check the project.**
+
+```bash
+.venv/bin/workpeg doctor .
+```
+
+**Build the UI.**
+
+```bash
+.venv/bin/workpeg ui build ui/
+```
+
+**Run the function tests.**
+
+```bash
+PYTHONPATH=function .venv/bin/pytest -v function/tests/
+```
+
+**Serve the UI locally** (needs a session token in `WORKPEG_PK` for the live API to verify; without one the shell still serves, but the in-page session can't be verified):
+
+```bash
+export WORKPEG_PK="<your session token>"
+.venv/bin/workpeg ui serve ui/ --port 4399
+```
+
+---
+
+## What the UI actually does
+
+All real pages sit under `/b/[business_id]`, inside the Workpeg scaffold. The landing page (`/`) sends the person to their last business or their first.
+
+Gatekeeping is two-sided: the rail only lists modules the business has enabled, and every module route re-checks the same table. A typed URL to a disabled or uninstalled module gives one honest sentence instead of pretending to work. The function re-gates every action it serves, so the UI is convenience, not the boundary.
+
+QuickPass reads the `check_ins` table (each check-in linked to its booking) and gates on the QuickPass module being enabled for that business.
+
+---
+
+## Current status
+
+- Manifest valid; `workpeg doctor .` clean.
+- UI builds; app bundle confirmed to include QuickPass, its `/quickpass` route, and `check_ins` reads.
+- Function module model + authorization layer implemented and exercised end to end.
+- Browser verified headless against a **stub** of the Workpeg API: pages render, table reads resolve, gating branches behave. Not yet verified against the live API.
+
+**Not done yet:**
+
+- Live-API browser run — blocked on a valid session token for the `pegpower` peg/business.
+- Module bodies for Guest Hub, Deals, Property Ops — catalog entries and gated routes exist; full page sets don't yet.
+- UI writes — everything is read-only for now.
+- Whole-Peg publish — not runnable yet.
+
+---
+
+## Files
 
 ```
 powerpeg/
-├── backend/
-│   ├── app/
-│   │   ├── api/                   # REST & WebSocket Endpoints (Rooms, Bookings, Devices, Telemetry, Alerts, Audit)
-│   │   ├── models/                # SQLAlchemy 2.0 Async Entity Definitions
-│   │   ├── schemas/               # Pydantic v2 Contract Validation
-│   │   ├── services/
-│   │   │   ├── auth_engine.py     # Authorisation Logic & State Transitions
-│   │   │   ├── device_service.py  # Device Registration, Heartbeat, Command Queue & ACK
-│   │   │   ├── simulator_service.py # Independent Virtual Telemetry Generator
-│   │   │   ├── anomaly_service.py # Vector Cross-Reconciliation & Alert Generator
-│   │   │   └── websocket_manager.py # Real-time Event Streaming
-│   │   ├── config.py              # Application Configuration
-│   │   ├── database.py            # Async Database Engine & Sessionmaker
-│   │   └── main.py                # FastAPI Application & Static UI Server
-│   ├── tests/
-│   │   └── test_api.py            # Comprehensive Async End-to-End Test Suite
-│   └── requirements.txt
-├── frontend/                      # React 18 + Vite + Tailwind CSS + Recharts
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Header.jsx         # Live Bus Monitor & System KPIs
-│   │   │   ├── RoomHero.jsx       # Primary Hardware Showcase (ROOM-204) + OLED Simulation
-│   │   │   ├── MultiRoomGrid.jsx  # Scaling Fleet (ROOM-101, ROOM-102)
-│   │   │   ├── AlertsPanel.jsx    # Real-Time Anomaly Ticker with Acknowledgment
-│   │   │   └── AuditTimeline.jsx  # Timestamped Chronological Event Trail
-│   │   └── api.js                 # Centralized Client API Service
-│   └── package.json
-├── firmware/
-│   └── az3166/
-│       ├── PegPower_AZ3166.ino    # Arduino C++ Firmware Sketch for MXChip AZ3166
-│       └── README.md              # Flashing and Setup Guide
-├── scripts/
-│   ├── seed_demo.py               # 1-Click Database Demo Reset & Seeder
-│   └── mock_az3166.py             # Python AZ3166 DevKit Emulator (Console OLED/RGB LED)
-├── PegPower_Hackathon_PRD.docx     # Original Product Requirements Document
-├── start.sh                       # Single-Command Unified Launcher
+├── function/          # Workpeg function (backend logic)
+├── ui/                # Workpeg-native UI (Python → JS via workpeg ui build)
+├── frontend/          # Old React dashboard prototype (artifact)
+├── docs/
+│   └── 001-pegpower-system-architecture.md
+├── workpeg.json       # Peg manifest
 └── README.md
 ```
-
----
-
-## 🚀 Quick Start
-
-### 1. Launch Backend & Dashboard
-```bash
-./start.sh
-```
-* **Mission Control Dashboard:** [http://localhost:8000](http://localhost:8000)
-* **Interactive API Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Live WebSocket Bus:** `ws://localhost:8000/api/ws`
-
-### 2. Connect the Edge Hardware
-* **Option A: Physical MXChip AZ3166 DevKit**
-  Follow the [Firmware Guide](file:///home/zoecyber/powerpeg/firmware/az3166/README.md) to flash `PegPower_AZ3166.ino`.
-* **Option B: Run the Console Hardware Emulator**
-  ```bash
-  source .venv/bin/activate
-  python scripts/mock_az3166.py http://localhost:8000
-  ```
-
----
-
-## 🧪 Running Automated Tests
-
-Run the full end-to-end test suite (authorization state machine, device command queueing, telemetry ingestion, anomaly detection, and audit logging):
-
-```bash
-PYTHONPATH=backend .venv/bin/pytest -v backend/tests/test_api.py
-```
-
----
-
-## 🎬 Suggested Live Hackathon Presentation Demo (PRD Section 13.2)
-
-1. **Overview & Initial State:** Open [http://localhost:8000](http://localhost:8000). Show `ROOM-204` assigned to `AZ3166-01`. Point out that the room is `UNAUTHORISED`, the physical controller relay reports `OFF` (Red LED), and telemetry shows 0 kW.
-2. **Booking Creation:** Click **Check In Demo Guest**. A new stay is booked with simulated payment `PENDING`. Show that authorization remains `DENIED` because payment is not verified.
-3. **Simulated Payment Confirmation:** Click **Confirm Simulated Payment**. The Authorisation Engine approves the room (`AUTHORISED`), instantly queues `POWER_ON`, and dispatches it to the AZ3166.
-4. **Physical Controller Response:** Show the AZ3166 OLED updating to `RELAY: [ON]` with the RGB LED turning **Green**.
-5. **Electrical Simulator Telemetry:** The independent virtual electrical simulator activates, streaming realistic voltage (~230V) and active load (~0.95 kW) to the Recharts waveform. Point out the `[SIMULATED TELEMETRY]` banner.
-6. **Triggering Anomaly (The "Pitch Hero"):** Click **Simulate Rogue Power Draw**. The simulator generates a 1.4 kW load while unpermitted, immediately triggering a `CRITICAL` alert: `ENERGY_WHILE_UNAUTHORISED`.
-7. **Operator Acknowledgment:** Click **Acknowledge** on the alert card. Show the resolution logged to the audit trail.
-8. **Checkout / Revocation:** Click **Revoke Stay / Checkout**. The backend revokes authorization, dispatches `POWER_OFF`, the AZ3166 relay turns `OFF` (Red LED), and load drops to 0 kW.
-9. **Audit Log Inspection:** Scroll through the Audit Trail showing timestamped proof of every booking, payment change, command dispatch, device acknowledgment, and anomaly alert.
