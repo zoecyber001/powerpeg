@@ -114,14 +114,24 @@ class BookingDetailPage(App):
     def open_bookings(self):
         navigate(biz_url("/bookings"))
 
+    def open_guest_hub(self):
+        booking_id = self.booking.get("booking_id") or route.booking_id or ""
+        if booking_id:
+            navigate(biz_url("/guest/" + booking_id))
+
     def build(self):
         return Padding(
             Column(
                 PageHeader(
                     "Booking",
                     "The stored record for this reservation.",
-                    Button("All bookings", variant="outline-gray",
-                           icon="arrow-left", on_click=self.open_bookings),
+                    Row(
+                        Button("Guest hub", variant="primary", icon="user",
+                               on_click=self.open_guest_hub),
+                        Button("All bookings", variant="outline-gray",
+                               icon="arrow-left", on_click=self.open_bookings),
+                        gap=10, align="center",
+                    ),
                 ),
                 self.body(),
                 gap=24,

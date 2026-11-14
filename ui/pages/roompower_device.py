@@ -44,6 +44,8 @@ class RoomPowerDevicePage(App):
     reports = State([])
     requested = State("")
     reported = State("")
+    report_age = State("No report yet")
+    report_tone = State("neutral")
     state_label = State("")
     state_tone = State("")
     state_note = State("")
@@ -143,6 +145,7 @@ class RoomPowerDevicePage(App):
                 "source": data.get("source") or "",
                 "command_id": data.get("command_id") or "",
                 "at": self.stamp(data.get("reported_at")),
+                "raw": data.get("reported_at") or "",
                 "note": data.get("note") or "",
             })
         self.reports = lines
@@ -214,8 +217,12 @@ class RoomPowerDevicePage(App):
                     self.requested = command["command"]
                     self.pending_id = command["command_id"]
         self.reported = ""
+        self.report_age = "No report yet"
+        self.report_tone = "neutral"
         if len(self.reports) > 0:
             self.reported = self.reports[0]["relay"]
+            self.report_age = self.age_label(self.reports[0]["raw"])
+            self.report_tone = self.age_tone(self.reports[0]["raw"])
 
         if self.reported == "":
             self.state_label = "No report yet"
@@ -384,6 +391,57 @@ class RoomPowerDevicePage(App):
     def now_iso(self):
         return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
 
+    def freshness_tag(self):
+        """The report's age, coloured: green fresh, red once it has gone cold."""
+        if self.report_tone == "success":
+            return Tag(self.report_age, tone="success")
+        elif self.report_tone == "critical":
+            return Tag(self.report_age, tone="critical")
+        elif self.report_tone == "warning":
+            return Tag(self.report_age, tone="warning")
+        else:
+            return Tag(self.report_age)
+
+    def age_seconds(self, raw):
+        """Seconds since the controller's own report, or -1 if unreadable."""
+        if not raw:
+            return -1
+        then = dates.to_epoch(raw)
+        now = dates.to_epoch(self.now_iso())
+        if not then or not now:
+            return -1
+        return int(now) - int(then)
+
+    def age_label(self, raw):
+        seconds = self.age_seconds(raw)
+        if seconds < 0:
+            return "Report time unknown"
+        elif seconds < 120:
+            return "Fresh, just reported"
+        elif seconds < 1800:
+            return "Fresh, " + str(int(seconds / 60)) + " min old"
+        else:
+            return "Stale, " + self.age_long(seconds)
+
+    def age_long(self, seconds):
+        hours = int(seconds / 3600)
+        minutes = int((seconds - hours * 3600) / 60)
+        if hours == 0:
+            return str(minutes) + " min old"
+        elif minutes == 0:
+            return str(hours) + " h old"
+        else:
+            return str(hours) + " h " + str(minutes) + " min old"
+
+    def age_tone(self, raw):
+        seconds = self.age_seconds(raw)
+        if seconds < 0:
+            return "warning"
+        elif seconds < 1800:
+            return "success"
+        else:
+            return "critical"
+
     def stamp(self, value):
         if not value:
             return "—"
@@ -459,6 +517,7 @@ class RoomPowerDevicePage(App):
                     Text(self.state_label or "Unknown", variant="title",
                          weight="medium"),
                     Spacer(),
+                    self.freshness_tag(),
                     Tag(self.device.get("device_code") or "—"),
                     align="center",
                     gap=10,
