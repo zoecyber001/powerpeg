@@ -1,0 +1,112 @@
+# PegPower — build progress
+
+Running log for autonomous work sessions. Read this first; it says what is
+done, what is half-done, what is blocked, and the exact next step.
+
+Branch: `pegpower/connected-workflow` (never commit to `main`).
+Build: `.venv/bin/workpeg ui build ui/`
+Tests: `PYTHONPATH=function .venv/bin/pytest -q tests/`
+Shell check: `python3 docs/check_workspace_shell.py`
+
+## Non-negotiables discovered the hard way
+
+1. **The compiled browser UI cannot call Function actions.** `RunFunctionAction`
+   is refused by the compiler and `workpeg.post(url, data)` takes a URL, not an
+   action. Pages may only use the table API (`get_tables`, `get_rows`,
+   `add_row`, `update_row`, `delete_row`) plus `http.*`. Functions are invoked
+   only by the platform through `post_save` hooks declared in `workpeg.json`.
+2. Therefore **all state the UI shows lives in platform tables**, and each page
+   computes its own date windows with the SDK `dates` helpers.
+3. Function hooks currently validate/mutate an in-memory mirror; whether the
+   platform rejects a save when a hook returns `{"ok": False, "refused": True}`
+   is **unverified**. Treat the hooks as defence in depth and make the UI state
+   correct on its own, not as the only guard.
+4. A verified identity never approves a check-in, and a paid booking never
+   powers a room. Approval is a separate, explicit, human act.
+
+## Done and tested
+
+- `function/app/quickpass.py` — provider seam. `DiditProvider` (real
+  `POST /v3/session/`, `GET /v3/session/{id}/decision/`, `x-api-key`),
+  `DemoProvider` fallback, exact Didit status mapping (unknown → `error`, never a
+  pass), HMAC verification for `X-Signature-V2` / `X-Signature` /
+  `X-Signature-Simple` with the 300s replay window and rotation `-Previous`
+  headers.
+  **Verified against the live Didit sandbox**: workflows listed, session
+  created (`8144842b-…`, `https://verify.didit.me/session/PR38inCyjW_y`), decision
+  fetched and normalized to `pending`.
+- `function/app/guestops.py` — eligibility, `approve_check_in` (idempotent grant
+  event with bounded expiry), `revoke_check_in`, `checkout` (revoke → energy
+  policy → housekeeping task), request validation, `grant_is_live`.
+- `function/app/roompower.py` — command guard, reconcile, twin hooks, and
+  `on_device_report_post_save` (validates `relay_state` in on/off and a known
+  `device_code`, acknowledges the matching command).
+- `function/app/main.py` — dispatcher routes: `quickpass_start`,
+  `quickpass_refresh`, `quickpass_provider`, `quickpass_normalize`,
+  `quickpass_webhook_verify`, `checkin_eligibility`, `checkin_approve`,
+  `checkout_plan`, `grant_live`, `service_request_validate`, plus hooks
+  `on_verification_post_save`, `on_authorization_post_save`,
+  `on_service_request_post_save`, `on_command_post_save`,
+  `on_device_post_save`, `on_device_report_post_save`.
+- `workpeg.json` — 18 tables, including `authorizations`, `verifications`,
+  `device_reports`, `service_requests`, `staff_tasks`, with hooks wired.
+- `ui/pages/commerce.py` — marketplace, room detail, date windows, reserve,
+  demo payment, all on table transport; builds clean.
+- `ui/pages/front_desk.py` — connected arrival desk: payment + identity
+  eligibility, explicit **Review & approve** (writes `authorizations`,
+  `check_ins`, and a `POWER_ON` command), **Check out** (revoking
+  authorisation, closing check-in, `CUT_NON_ESSENTIAL`, housekeeping
+  `staff_tasks`), guest-request table, and a **Guest hub** link per arrival.
+- `ui/pages/roompower_device.py` — AZ3166 twin console: dispatch buttons queue
+  `PENDING` commands (POWER_ON refused without a live grant), twin report
+  buttons append `device_reports`, derived verdict (Live / Power off / Awaiting
+  acknowledgement / Unauthorized load / No report yet), command + report tables.
+- `ui/pages/quickpass.py` — identity sessions from `verifications` with the
+  provider named on every row, verified/review/pending counts, hosted session
+  link, and the check-ins the desk approved.
+- `ui/pages/guest_hub.py` + route `/b/[business_id]/guest/[booking_id]` — stay,
+  payment, identity status, the room's last **reported** power state, and a
+  service-request form that appends to `service_requests`.
+- Tests: **78 passed** (`tests/test_platform.py`, `tests/test_roompower.py`,
+  `tests/test_quickpass_guestops.py`).
+
+## Known limitation: credentials
+
+Didit sandbox credentials are in `.env.local` (gitignored, chmod 600):
+`DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID=754e96c9-…` ("Basic KYC", $0.33), plus
+`DIDIT_BASE_URL`. The API key is a sandbox test key the user will rotate.
+Production must set these on the function's environment; nothing is read from
+the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
+
+## In progress / next
+
+1. Nothing half-written is left in the UI: all of `front_desk`,
+   `roompower_device`, `quickpass` and `guest_hub` compile and are wired to the
+   real tables. Next is the written deliverable report, then the remaining gaps
+   below.
+2. Gaps that are honest limitations rather than stubs: the browser cannot start
+   a real Didit session (no function bridge), so a demo session is labelled demo
+   wherever it appears; webhooks need a public URL, so polling is the path.
+3. Optional polish, only if the report asks for it: booking detail linking to
+   the guest hub, and a stale-report badge in RoomPower.
+
+## Blocked / unverifiable here
+
+- No Chrome in this environment, so no screenshot or visual verification.
+- `api.workpeg.com` rejected the available token (`token_not_valid`), so no live
+  platform API run. Docker build status unknown this session.
+- Didit webhooks need a publicly reachable URL; the peg has no inbound endpoint,
+  so polling (`quickpass_refresh`) is the working path. Webhook registration:
+  `POST /v3/webhook/destinations/` with label/url/subscribed_events.
+- Whether the platform enforces hook refusals as rejected saves.
+
+## Decisions worth keeping
+
+- `authorizations` table exists because function memory is invisible to the
+  browser; the grant must be a row for RoomPower and the UI to read.
+- Status mapping is exact and case-sensitive because Didit documents exact
+  strings; an unmapped status must not silently count as a pass.
+- Checkout never assumes "power off": `commands.plan_checkout` obeys the
+  business's policy and refuses a blanket shutdown unless allowed.
+- Demo provider is always labelled demo in its note, never presented as a real
+  identity check.

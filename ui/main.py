@@ -21,6 +21,7 @@ from pages.overview import OverviewPage
 from pages.front_desk import FrontDeskPage
 from pages.module_page import ModulePage
 from pages.quickpass import QuickPassPage
+from pages.guest_hub import GuestHubPage
 from pages.bookings import BookingsPage
 from pages.booking_detail import BookingDetailPage
 from pages.roompower import RoomPowerPage
@@ -91,6 +92,7 @@ class Main(Router):
         Route("/b/[business_id]/roompower/[device_code]", RoomPowerDevicePage),
         Route("/b/[business_id]/m/[module_id]", ModulePage),
         Route("/b/[business_id]/quickpass", QuickPassPage),
+        Route("/b/[business_id]/guest/[booking_id]", GuestHubPage),
         Route("/b/[business_id]/marketplace", MarketplacePage),
         Route("/b/[business_id]/marketplace/[stay_id]", HotelDetailPage),
         Route("/b/[business_id]/ecommerce/reservations", BusinessReservationsPage),

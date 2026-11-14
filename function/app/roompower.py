@@ -308,3 +308,25 @@ def acknowledge(command_id: str, device_code: str, relay: str,
             room_code=room_code,
         )
     return result
+
+
+def on_device_report_post_save(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate a `device_reports` row: a real controller's claim, append-only.
+
+    Reports are never edited in place, so the history of what a controller said
+    survives; the newest report is the device's current reported state.
+    """
+    relay = str(payload.get("relay_state") or "").strip().lower()
+    if relay not in ("on", "off"):
+        return {
+            "ok": False,
+            "refused": True,
+            "error": f"'{relay or 'empty'}' is not a relay state; expected on or off.",
+        }
+    if not payload.get("device_code"):
+        return {"ok": False, "refused": True,
+                "error": "A device report must name the device that sent it."}
+    note = ""
+    if payload.get("command_id"):
+        note = "Report acknowledges " + str(payload.get("command_id")) + "."
+    return {"ok": True, "relay_state": relay, "note": note}

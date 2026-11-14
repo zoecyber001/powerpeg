@@ -1313,6 +1313,8 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
         return roompower.on_command_post_save(data)
     if hook == "pegpower.on_device_post_save" or action == "on_device_post_save":
         return roompower.on_device_post_save(data)
+    if hook == "pegpower.on_device_report_post_save" or action == "on_device_report_post_save":
+        return roompower.on_device_report_post_save(data)
     if hook == "pegpower.on_verification_post_save" or action == "on_verification_post_save":
         return quickpass.on_verification_post_save(data)
     if hook == "pegpower.on_authorization_post_save" or action == "on_authorization_post_save":

@@ -1,17 +1,31 @@
-"""One controller: what it is, what it last reported, and its commands.
+"""One controller: the AZ3166 demo twin and its request / command / report trail.
 
-The device block is the `devices` row, the room block is the `rooms` row for
-the same room, and the command table is every `commands` row for this device,
-newest first. Gating matches the module list page, so a typed URL cannot read a
-switched-off module's tables.
+Three things are kept apart here, as RoomPower requires:
+
+* **Requested** — what the desk wants (power on, cut non-essential, power off).
+  A request only queues a command row; nothing is assumed about the room.
+* **Command** — the queued instruction and its lifecycle
+  (PENDING, SENT, ACKNOWLEDGED, FAILED, EXPIRED, CANCELLED).
+* **Reported** — what the controller itself claims. Reports are append-only
+  `device_reports` rows, so this page derives ACKNOWLEDGED by matching a
+  report's `command_id` against a queued command instead of editing rows.
+
+The buttons below stand in for a physical board: this is a demo twin running in
+the browser, and the page says so wherever it could be mistaken for hardware.
 """
 from workpeg.ui import (
-    App, State, Padding, Column, Row, Text, Button, Table, TableHeader,
-    TableCell, TableRow, Tag, Link, route, biz_url, navigate, set_title,
-    store, workpeg,
+    App, State, Padding, Column, Row, Container, Text, Button, Table,
+    TableHeader, TableCell, TableRow, Tag, Divider, Icon, Spacer, dates,
+    route, biz_url, navigate, set_title, store, workpeg, toast,
 )
 
-from components import EmptyState, ErrorState, LoadingState, PageHeader
+from components import (
+    FactRow,
+    EmptyState,
+    ErrorState,
+    LoadingState,
+    PageHeader,
+)
 
 
 class RoomPowerDevicePage(App):
@@ -21,35 +35,46 @@ class RoomPowerDevicePage(App):
     error = State("")
     enabled = State(True)
     found = State(False)
+    busy = State(False)
+    action_error = State("")
+    action_note = State("")
     device = State({})
     room = State({})
-    command_rows = State([])
-    command_count = State(0)
-    command_summary = State("")
+    commands = State([])
+    reports = State([])
+    requested = State("")
+    reported = State("")
+    state_label = State("")
+    state_tone = State("")
+    state_note = State("")
+    grant_label = State("")
+    grant_live = State(False)
+    pending_id = State("")
 
     async def on_mount(self):
-        store.page_title = "Device"
-        set_title("Device")
+        store.page_title = "AZ3166 twin"
+        set_title("AZ3166 twin")
         await self.load()
 
+    # ── reading ──────────────────────────────────────────────────────────
+
     async def load(self):
+        self.loading = True
+        self.error = ""
+        self.enabled = True
+        self.found = False
+        self.device = {}
+        self.room = {}
+        self.commands = []
+        self.reports = []
+        self.pending_id = ""
         try:
-            self.error = ""
-            self.enabled = await self.module_on()
-            self.found = False
-            self.device = {}
-            self.room = {}
-            self.command_rows = []
-            self.command_count = 0
-            if self.enabled:
-                await self.read_device()
+            await self.read_device()
+            if self.found:
                 await self.read_commands()
-            self.command_count = len(self.command_rows)
-            if self.command_count == 1:
-                self.command_summary = "1 command"
-            else:
-                self.command_summary = (str(self.command_count)
-                                        + " commands")
+                await self.read_reports()
+                await self.read_grant()
+            self.judge()
         except Exception as e:
             self.error = e.message
         self.loading = False
@@ -58,21 +83,20 @@ class RoomPowerDevicePage(App):
         table = await self.table("devices")
         if table is None:
             return
-        rows = await workpeg.get_rows(table["uuid"], limit=200)
-        for row in rows:
+        for row in await workpeg.get_rows(table["uuid"], limit=200):
             data = row.get("data") or {}
             if data.get("device_code") == route.device_code:
-                data["last_seen_display"] = self.stamp(
-                    data.get("last_seen_at"))
                 self.device = data
                 self.found = True
-        room_code = self.device.get("room_code")
+        if not self.found:
+            return
+        room_code = self.device.get("room_code") or ""
         if not room_code:
             return
-        rooms_table = await self.table("rooms")
-        if rooms_table is None:
+        rooms = await self.table("rooms")
+        if rooms is None:
             return
-        for row in await workpeg.get_rows(rooms_table["uuid"], limit=200):
+        for row in await workpeg.get_rows(rooms["uuid"], limit=200):
             data = row.get("data") or {}
             if data.get("room_code") == room_code:
                 self.room = data
@@ -86,12 +110,269 @@ class RoomPowerDevicePage(App):
         for row in rows:
             data = row.get("data") or {}
             if data.get("device_code") == route.device_code:
-                data["issued_display"] = self.stamp(data.get("issued_at"))
-                data["acknowledged_display"] = self.stamp(
-                    data.get("acknowledged_at"))
-                mine.append(row)
+                mine.append(data)
         mine = mine[::-1]
-        self.command_rows = mine
+        lines = []
+        for data in mine:
+            lines.append({
+                "command_id": data.get("command_id") or "",
+                "command": data.get("command") or "",
+                "status": data.get("status") or "unknown",
+                "issued": self.stamp(data.get("issued_at")),
+                "reason": data.get("failure_reason") or "",
+                "acked": "",
+            })
+        self.commands = lines
+
+    async def read_reports(self):
+        table = await self.table("device_reports")
+        if table is None:
+            return
+        rows = await workpeg.get_rows(table["uuid"], limit=200)
+        mine = []
+        for row in rows:
+            data = row.get("data") or {}
+            if data.get("device_code") == route.device_code:
+                mine.append(data)
+        mine = mine[::-1]
+        lines = []
+        for data in mine:
+            lines.append({
+                "report_id": data.get("report_id") or "",
+                "relay": (data.get("relay_state") or "").upper(),
+                "source": data.get("source") or "",
+                "command_id": data.get("command_id") or "",
+                "at": self.stamp(data.get("reported_at")),
+                "note": data.get("note") or "",
+            })
+        self.reports = lines
+        self.link_reports()
+
+    def link_reports(self):
+        """Mark a queued command acknowledged when a report names it."""
+        seen = []
+        for report in self.reports:
+            if report["command_id"]:
+                seen.append(report["command_id"])
+        updated = []
+        for command in self.commands:
+            status = command["status"]
+            acked = command["acked"]
+            if command["command_id"] in seen and (status == "PENDING" or status == "SENT"):
+                status = "ACKNOWLEDGED"
+                acked = "by twin report"
+            updated.append({
+                "command_id": command["command_id"],
+                "command": command["command"],
+                "status": status,
+                "issued": command["issued"],
+                "reason": command["reason"],
+                "acked": acked,
+            })
+        self.commands = updated
+
+    async def read_grant(self):
+        """A live Core grant for this room, if there is one."""
+        room_code = self.device.get("room_code") or ""
+        self.grant_live = False
+        self.grant_label = "No grant for this room"
+        table = await self.table("authorizations")
+        if table is None or not room_code:
+            return
+        rows = await workpeg.get_rows(table["uuid"], limit=200)
+        latest = None
+        for row in rows:
+            data = row.get("data") or {}
+            if (data.get("room_code") == room_code
+                    and (data.get("status") or "") == "granted"):
+                if latest is None:
+                    latest = data
+                elif (data.get("granted_at") or "") >= (
+                        latest.get("granted_at") or ""):
+                    latest = data
+        if latest is None:
+            return
+        expiry = str(latest.get("expires_at") or "")
+        if expiry and dates.to_epoch(expiry) and dates.to_epoch(self.now_iso()) \
+                and dates.to_epoch(expiry) < dates.to_epoch(self.now_iso()):
+            self.grant_label = "Grant expired " + self.stamp(expiry)
+            return
+        self.grant_live = True
+        guest = latest.get("guest_name") or latest.get("booking_id") or "guest"
+        self.grant_label = "Granted to " + str(guest)
+        if expiry:
+            self.grant_label = (self.grant_label + ", until "
+                                + self.stamp(expiry))
+
+    def judge(self):
+        """Requested vs reported, stated in one sentence a receptionist reads."""
+        self.requested = ""
+        self.pending_id = ""
+        for command in self.commands:
+            if (command["status"] == "PENDING" or command["status"] == "SENT"):
+                if self.pending_id == "":
+                    self.requested = command["command"]
+                    self.pending_id = command["command_id"]
+        self.reported = ""
+        if len(self.reports) > 0:
+            self.reported = self.reports[0]["relay"]
+
+        if self.reported == "":
+            self.state_label = "No report yet"
+            self.state_tone = "neutral"
+            self.state_note = ("This controller has never reported a relay"
+                               " state, so the room's power is unknown.")
+            return
+
+        if self.reported == "ON" and not self.grant_live:
+            self.state_label = "Unauthorized load"
+            self.state_tone = "danger"
+            self.state_note = ("The relay is on with no live grant for this"
+                               " room. That is a load the desk did not"
+                               " authorise.")
+            return
+
+        wanted = ""
+        if self.requested == "POWER_ON":
+            wanted = "ON"
+        elif self.requested == "CUT_NON_ESSENTIAL":
+            wanted = "OFF"
+        elif self.requested == "POWER_OFF":
+            wanted = "OFF"
+
+        if wanted and wanted != self.reported:
+            self.state_label = "Awaiting acknowledgement"
+            self.state_tone = "warning"
+            self.state_note = ("Requested " + self.requested + ", controller"
+                               " still reports " + self.reported + ".")
+            return
+
+        if self.reported == "ON":
+            self.state_label = "Live"
+            self.state_tone = "success"
+            self.state_note = ("The relay is on and reported by the"
+                               " controller itself.")
+        else:
+            self.state_label = "Power off"
+            self.state_tone = "neutral"
+            self.state_note = ("The relay is off and reported by the"
+                               " controller itself.")
+
+    # ── writing ──────────────────────────────────────────────────────────
+
+    async def dispatch(self, command):
+        """Queue one command row. Nothing is assumed until the twin reports."""
+        self.busy = True
+        self.action_error = ""
+        self.action_note = ""
+        try:
+            if command == "POWER_ON" and not self.grant_live:
+                self.action_error = ("RoomPower will not switch a room on"
+                                     " without a live Core grant. Approve the"
+                                     " check-in at the front desk first.")
+                self.busy = False
+                return
+            table = await self.table("commands")
+            if table is None:
+                self.action_error = "This business has no commands table."
+                self.busy = False
+                return
+            stamp = self.now_iso()
+            millis = str(dates.to_epoch(stamp) or 0)
+            code = "CMD-" + millis
+            row = {
+                "command_id": code,
+                "business_id": route.business_id,
+                "room_code": self.device.get("room_code") or "",
+                "device_code": route.device_code,
+                "command": command,
+                "status": "PENDING",
+                "issued_at": stamp,
+                "expires_at": "",
+                "idempotency_key": code,
+                "authorization_event_id": "",
+                "failure_reason": "",
+                "device_reported_state": "",
+            }
+            await workpeg.add_row(table["uuid"], row)
+            self.action_note = ("Queued " + command + " as " + code
+                                + ". The room stays as it is until the twin"
+                                " reports back.")
+            toast(command + " queued")
+            await self.reload()
+        except Exception as e:
+            self.action_error = e.message
+        self.busy = False
+
+    async def power_on(self):
+        await self.dispatch("POWER_ON")
+
+    async def cut_essential(self):
+        await self.dispatch("CUT_NON_ESSENTIAL")
+
+    async def power_off(self):
+        await self.dispatch("POWER_OFF")
+
+    async def report(self, relay):
+        """The twin's own claim, appended as a `device_reports` row."""
+        self.busy = True
+        self.action_error = ""
+        self.action_note = ""
+        try:
+            table = await self.table("device_reports")
+            if table is None:
+                self.action_error = "This business has no device reports table."
+                self.busy = False
+                return
+            stamp = self.now_iso()
+            millis = str(dates.to_epoch(stamp) or 0)
+            note = "Demo twin in the browser; not physical hardware."
+            if self.pending_id:
+                note = (note + " Acknowledges " + self.pending_id + ".")
+            row = {
+                "report_id": "RPT-" + millis,
+                "device_code": route.device_code,
+                "room_code": self.device.get("room_code") or "",
+                "command_id": self.pending_id,
+                "relay_state": relay.lower(),
+                "source": "az3166-twin",
+                "reported_at": stamp,
+                "note": note,
+            }
+            await workpeg.add_row(table["uuid"], row)
+            self.action_note = "The twin reported relay " + relay + "."
+            toast("Twin reported " + relay)
+            await self.reload()
+        except Exception as e:
+            self.action_error = e.message
+        self.busy = False
+
+    async def report_on(self):
+        await self.report("ON")
+
+    async def report_off(self):
+        await self.report("OFF")
+
+    async def reload(self):
+        self.loading = True
+        self.error = ""
+        self.found = False
+        try:
+            await self.read_device()
+            if self.found:
+                await self.read_commands()
+                await self.read_reports()
+                await self.read_grant()
+            self.judge()
+        except Exception as e:
+            self.error = e.message
+        self.loading = False
+
+    def retry(self):
+        self.loading = True
+        navigate(biz_url("/roompower/" + route.device_code))
+
+    # ── helpers ──────────────────────────────────────────────────────────
 
     async def table(self, name):
         tables = await workpeg.get_tables()
@@ -100,51 +381,37 @@ class RoomPowerDevicePage(App):
                 return candidate
         return None
 
-    async def module_on(self):
-        """Read the business's module rows; no rows means unconfigured."""
-        table = await self.table("business_modules")
-        if table is None:
-            return True
-        rows = await workpeg.get_rows(table["uuid"], limit=100)
-        if len(rows) == 0:
-            return True
-        for row in rows:
-            data = row.get("data") or {}
-            if (data.get("module_id") == "roompower"
-                    and data.get("installed") and data.get("enabled")):
-                return True
-        return False
+    def now_iso(self):
+        return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
 
     def stamp(self, value):
-        """A stored ISO timestamp as the desk reads it: 13 Nov 2026, 15:00."""
         if not value:
             return "—"
         text = str(value)
         if len(text) < 16:
             return text
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
-                  "Sep", "Oct", "Nov", "Dec"]
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+                  "Oct", "Nov", "Dec"]
         month = months[int(text[5:7]) - 1]
         return (str(int(text[8:10])) + " " + month + " " + text[0:4] + ", "
                 + text[11:16])
 
-    async def retry(self):
-        self.loading = True
-        await self.load()
-
-    def open_overview(self):
-        navigate(biz_url("/"))
-
     def open_roompower(self):
         navigate(biz_url("/roompower"))
+
+    def open_front_desk(self):
+        navigate(biz_url("/front-desk"))
+
+    # ── rendering ────────────────────────────────────────────────────────
 
     def build(self):
         return Padding(
             Column(
                 PageHeader(
-                    "Device",
-                    "One controller, its own reported state and its command"
-                    " history.",
+                    "AZ3166 twin",
+                    "Dispatch a command, let the demo controller report back,"
+                    " and watch requested, command and reported state stay"
+                    " separate.",
                     Button("All devices", variant="outline-gray",
                            icon="arrow-left", on_click=self.open_roompower),
                 ),
@@ -156,21 +423,12 @@ class RoomPowerDevicePage(App):
 
     def body(self):
         if self.loading:
-            return LoadingState("Reading this device...")
+            return LoadingState("Reading this controller...")
         elif self.error != "":
             return ErrorState(
                 self.error,
-                Button("Try again", variant="outline-gray", icon="refresh",
-                       on_click=self.retry),
-            )
-        elif not self.enabled:
-            return EmptyState(
-                "toggle-left",
-                "RoomPower is not enabled",
-                "This business has switched the module off, so this device is"
-                " not shown here.",
-                Button("Open the overview", variant="outline-gray",
-                       icon="home", on_click=self.open_overview),
+                Button("Reload the page", variant="outline-gray",
+                       icon="refresh", on_click=self.retry),
             )
         elif not self.found:
             return EmptyState(
@@ -182,120 +440,211 @@ class RoomPowerDevicePage(App):
             )
         else:
             return Column(
-                self.device_block(),
-                self.room_block(),
-                self.commands_table(),
-                gap=24,
+                self.status_card(),
+                Row(self.room_card(), self.report_card(), gap=16,
+                    align="stretch"),
+                self.controls_card(),
+                self.messages(),
+                self.command_table(),
+                self.report_table(),
+                gap=20,
                 align="stretch",
             )
 
-    def device_block(self):
-        return Column(
-            Text("Device", weight="semibold"),
+    def status_card(self):
+        return Container(
             Column(
                 Row(
-                    Text("Code", variant="caption"),
-                    Text(self.device.get("device_code") or "—"),
-                    align="center", gap=8,
+                    Icon("cpu", size=18),
+                    Text(self.state_label or "Unknown", variant="title",
+                         weight="medium"),
+                    Spacer(),
+                    Tag(self.device.get("device_code") or "—"),
+                    align="center",
+                    gap=10,
                 ),
+                Text(self.state_note or "", variant="muted"),
                 Row(
-                    Text("Type", variant="caption"),
-                    Text(self.device.get("device_type") or "—"),
-                    align="center", gap=8,
+                    FactRow("Requested", self.requested or "nothing pending"),
+                    FactRow("Reported", self.reported or "nothing yet"),
+                    FactRow("Grant", self.grant_label or "—"),
+                    gap=24,
+                    align="start",
                 ),
-                Row(
-                    Text("Connection", variant="caption"),
-                    Tag(self.device.get("connection_status") or "unknown"),
-                    align="center", gap=8,
-                ),
-                Row(
-                    Text("Reported relay", variant="caption"),
-                    Tag(self.device.get("reported_relay_state") or "—"),
-                    align="center", gap=8,
-                ),
-                Row(
-                    Text("Last seen", variant="caption"),
-                    Text(self.device.get("last_seen_display") or "—"),
-                    align="center", gap=8,
-                ),
-                gap=8, align="start",
+                gap=12,
+                align="stretch",
             ),
-            gap=10, align="stretch",
+            variant="card",
+            padding=20,
         )
 
-    def room_block(self):
-        if not self.room:
-            return Column(
-                Text("Room", weight="semibold"),
-                Text("This device is not assigned to a room.",
-                     variant="caption"),
-                gap=10, align="stretch",
-            )
+    def room_card(self):
         return Column(
             Text("Room", weight="semibold"),
             Column(
-                Row(
-                    Text("Room", variant="caption"),
-                    Text(self.room.get("display_name") or "—"),
-                    align="center", gap=8,
-                ),
-                Row(
-                    Text("Status", variant="caption"),
-                    Tag(self.room.get("status") or "unknown"),
-                    align="center", gap=8,
-                ),
-                Row(
-                    Text("Authorised", variant="caption"),
-                    Tag("authorised" if self.room.get("authorised")
-                        else "not authorised"),
-                    align="center", gap=8,
-                ),
-                Row(
-                    Text("Controller", variant="caption"),
-                    Text(self.room.get("assigned_device_id") or "—"),
-                    align="center", gap=8,
-                ),
-                gap=8, align="start",
+                FactRow("Room", self.room.get("display_name") or "—"),
+                FactRow("Room code", self.room.get("room_code") or "—"),
+                FactRow("Status", self.room.get("status") or "unknown"),
+                FactRow("Controller", self.device.get("device_code") or "—"),
+                FactRow("Connection",
+                        self.device.get("connection_status") or "unknown",
+                        ruled=False),
+                gap=2,
             ),
-            gap=10, align="stretch",
+            gap=8,
+            align="stretch",
         )
 
-    def commands_table(self):
-        if self.command_count == 0:
+    def report_card(self):
+        return Column(
+            Text("Controller", weight="semibold"),
+            Column(
+                FactRow("Type", self.device.get("device_type") or "AZ3166"),
+                FactRow("Last seen",
+                        self.stamp(self.device.get("last_seen_at"))),
+                FactRow("Reports", str(len(self.reports)) + " recorded"),
+                FactRow("Commands", str(len(self.commands)) + " queued"),
+                gap=2,
+            ),
+            gap=8,
+            align="stretch",
+        )
+
+    def controls_card(self):
+        return Container(
+            Column(
+                Row(Text("Dispatch a command", weight="semibold"),
+                    Spacer(),
+                    Tag("requested state"), align="center", gap=8),
+                Text(
+                    "A command is queued with status PENDING. The room's power"
+                    " does not change until the controller reports, and no"
+                    " grant is implied by a command.",
+                    variant="muted",
+                ),
+                Row(
+                    Button("Request power on", variant="primary",
+                           icon="power", on_click=self.power_on),
+                    Button("Cut non-essential", variant="outline-gray",
+                           icon="zap-off", on_click=self.cut_essential),
+                    Button("Request power off", variant="outline-gray",
+                           icon="power-off", on_click=self.power_off),
+                    gap=10,
+                    align="center",
+                ),
+                Divider(),
+                Row(Text("Demo twin", weight="semibold"),
+                    Spacer(),
+                    Tag("not physical hardware"), align="center", gap=8),
+                Text(
+                    "These buttons stand in for the AZ3166 board. Each press"
+                    " appends a report of what the controller claims; it never"
+                    " edits a command row.",
+                    variant="muted",
+                ),
+                Row(
+                    Button("Twin reports relay ON", variant="outline-gray",
+                           icon="toggle-right", on_click=self.report_on),
+                    Button("Twin reports relay OFF", variant="outline-gray",
+                           icon="toggle-left", on_click=self.report_off),
+                    gap=10,
+                    align="center",
+                ),
+                gap=12,
+                align="stretch",
+            ),
+            variant="card",
+            padding=20,
+        )
+
+    def messages(self):
+        if self.action_error != "":
+            return Container(
+                Row(Icon("alert-triangle", size=16),
+                    Text(self.action_error, variant="muted"),
+                    gap=10, align="start"),
+                variant="card",
+                padding=14,
+            )
+        elif self.action_note != "":
+            return Container(
+                Row(Icon("check-circle", size=16),
+                    Text(self.action_note, variant="muted"),
+                    gap=10, align="start"),
+                variant="card",
+                padding=14,
+            )
+        else:
+            return Spacer()
+
+    def command_table(self):
+        if len(self.commands) == 0:
             return Column(
                 Text("Commands", weight="semibold"),
-                Text("No commands have been sent to this device.",
+                Text("No command has ever been sent to this controller.",
                      variant="caption"),
-                gap=10, align="stretch",
+                gap=8,
+                align="stretch",
             )
         return Column(
-            Row(
-                Text("Commands", weight="semibold"),
-                Text(self.command_summary, variant="caption"),
-                align="center", gap=8,
-            ),
+            Row(Text("Commands", weight="semibold"),
+                Text("newest first", variant="caption"),
+                align="center", gap=8),
             Table(
                 TableHeader(
                     TableCell(title="Command"),
-                    TableCell(title="Action"),
+                    TableCell(title="Requested"),
                     TableCell(title="Status"),
                     TableCell(title="Issued"),
-                    TableCell(title="Delivered"),
-                    TableCell(title="Acknowledged"),
+                    TableCell(title="Note"),
                 ),
                 *[TableRow(
-                    TableCell(Text(r["data"].get("command_id", ""),
-                                   weight="medium")),
-                    TableCell(Tag(r["data"].get("command") or "—")),
-                    TableCell(Tag(r["data"].get("status") or "unknown")),
-                    TableCell(Text(r["data"].get("issued_display") or "—",
+                    TableCell(Text(c["command_id"], weight="medium")),
+                    TableCell(Tag(c["command"] or "—")),
+                    TableCell(Tag(c["status"] or "unknown")),
+                    TableCell(Text(c["issued"] or "—", variant="muted")),
+                    TableCell(Text(c["acked"] or c["reason"] or "—",
                                    variant="muted")),
-                    TableCell(Text(self.stamp(r["data"].get("delivered_at")),
-                                   variant="muted")),
-                    TableCell(Text(r["data"].get("acknowledged_display")
-                                   or "—", variant="muted")),
-                ) for r in self.command_rows],
-                sortable=True,
+                ) for c in self.commands],
             ),
-            gap=10, align="stretch",
+            Text(
+                "ACKNOWLEDGED appears here when a controller report names the"
+                " command; the command row itself is never rewritten by this"
+                " page.",
+                variant="caption",
+            ),
+            gap=10,
+            align="stretch",
+        )
+
+    def report_table(self):
+        if len(self.reports) == 0:
+            return Column(
+                Text("Reported state", weight="semibold"),
+                Text("The controller has not reported yet.", variant="caption"),
+                gap=8,
+                align="stretch",
+            )
+        return Column(
+            Row(Text("Reported state", weight="semibold"),
+                Text(str(len(self.reports)) + " reports", variant="caption"),
+                align="center", gap=8),
+            Table(
+                TableHeader(
+                    TableCell(title="Reported"),
+                    TableCell(title="Relay"),
+                    TableCell(title="Source"),
+                    TableCell(title="Acknowledges"),
+                    TableCell(title="Note"),
+                ),
+                *[TableRow(
+                    TableCell(Text(r["at"] or "—", variant="muted")),
+                    TableCell(Tag(r["relay"] or "—")),
+                    TableCell(Text(r["source"] or "—")),
+                    TableCell(Text(r["command_id"] or "—", variant="muted")),
+                    TableCell(Text(r["note"] or "—", variant="caption")),
+                ) for r in self.reports],
+            ),
+            gap=10,
+            align="stretch",
         )
