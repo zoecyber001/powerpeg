@@ -19,6 +19,7 @@ from components import EmptyState, ErrorState, LoadingState
 from pages.not_found import NotFoundPage
 from pages.overview import OverviewPage
 from pages.front_desk import FrontDeskPage
+from pages.roles import RolesPage
 from pages.module_page import ModulePage
 from pages.quickpass import QuickPassPage
 from pages.guest_hub import GuestHubPage
@@ -84,19 +85,25 @@ class Main(Router):
     store = Store(business="", page_title="")
     routes = [
         Route("/", Landing),
-        Route("/b/[business_id]", AppShell),
-        Route("/b/[business_id]/", OverviewPage),
-        Route("/b/[business_id]/front-desk", FrontDeskPage),
-        Route("/b/[business_id]/bookings", BookingsPage),
-        Route("/b/[business_id]/bookings/[booking_id]", BookingDetailPage),
-        Route("/b/[business_id]/roompower", RoomPowerPage),
-        Route("/b/[business_id]/roompower/[device_code]", RoomPowerDevicePage),
-        Route("/b/[business_id]/m/[module_id]", ModulePage),
-        Route("/b/[business_id]/quickpass", QuickPassPage),
-        Route("/b/[business_id]/guest/[booking_id]", GuestHubPage),
-        Route("/b/[business_id]/customer/bookings", CustomerBookingsPage),
-        Route("/b/[business_id]/marketplace", MarketplacePage),
-        Route("/b/[business_id]/marketplace/[stay_id]", HotelDetailPage),
-        Route("/b/[business_id]/ecommerce/reservations", BusinessReservationsPage),
+        # Every page under /b/[business_id] renders inside the AppShell's
+        # Scaffold: the shell stays mounted while the Outlet swaps, so the
+        # rail, the collapse control and Workpeg AI persist across
+        # navigation instead of vanishing with each page.
+        Shell(AppShell, "/b/[business_id]", [
+            Route("/", OverviewPage),
+            Route("/front-desk", FrontDeskPage),
+            Route("/roles", RolesPage),
+            Route("/bookings", BookingsPage),
+            Route("/bookings/[booking_id]", BookingDetailPage),
+            Route("/roompower", RoomPowerPage),
+            Route("/roompower/[device_code]", RoomPowerDevicePage),
+            Route("/m/[module_id]", ModulePage),
+            Route("/quickpass", QuickPassPage),
+            Route("/guest/[booking_id]", GuestHubPage),
+            Route("/customer/bookings", CustomerBookingsPage),
+            Route("/marketplace", MarketplacePage),
+            Route("/marketplace/[stay_id]", HotelDetailPage),
+            Route("/ecommerce/reservations", BusinessReservationsPage),
+        ]),
     ]
     not_found = NotFoundPage

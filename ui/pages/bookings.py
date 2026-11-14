@@ -18,6 +18,8 @@ from workpeg.ui import (
 from components import EmptyState, ErrorState, LoadingState, PageHeader
 
 
+
+
 class BookingsPage(App):
     MODULE = "bookings"
 
@@ -35,6 +37,64 @@ class BookingsPage(App):
         set_title("Bookings")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["payments"] = [
+            {"name": "payment_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "payment_status", "type": "string", "required": True},
+            {"name": "amount", "type": "number"},
+            {"name": "is_simulated", "type": "boolean"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["rooms"] = [
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "display_name", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_type", "type": "string"},
+            {"name": "rate", "type": "number"},
+            {"name": "area", "type": "string"},
+            {"name": "star_rating", "type": "number"},
+            {"name": "pitch", "type": "string"},
+            {"name": "assigned_device_id", "type": "string"},
+            {"name": "authorised", "type": "boolean"},
+            {"name": "authorised_reason", "type": "string"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         try:
             self.error = ""
@@ -72,12 +132,6 @@ class BookingsPage(App):
             self.error = e.message
         self.loading = False
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     async def module_on(self):
         """Read the business's module rows; no rows means unconfigured."""

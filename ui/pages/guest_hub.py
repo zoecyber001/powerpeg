@@ -19,6 +19,8 @@ from workpeg.ui import (
 )
 
 from components import (
+
+
     EmptyState,
     ErrorState,
     FactRow,
@@ -48,6 +50,34 @@ class GuestHubPage(App):
         set_title("Guest hub")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["service_requests"] = [
+            {"name": "request_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string"},
+            {"name": "guest_label", "type": "string"},
+            {"name": "category", "type": "string", "required": True},
+            {"name": "detail", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "assigned_to", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -129,11 +159,10 @@ class GuestHubPage(App):
         self.requests = lines
 
     async def read(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return await workpeg.get_rows(candidate["uuid"], limit=500)
-        return []
+        table = await self.table(name)
+        if table is None:
+            return []
+        return await workpeg.get_rows(table["uuid"], limit=500)
 
     def now_iso(self):
         return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
@@ -166,11 +195,7 @@ class GuestHubPage(App):
         self.sending = True
         now = self.now_iso()
         try:
-            tables = await workpeg.get_tables()
-            table = None
-            for candidate in tables:
-                if candidate.get("name") == "service_requests":
-                    table = candidate
+            table = await self.table("service_requests")
             if table is None:
                 toast("Service requests are not available here", kind="danger")
             else:
@@ -247,7 +272,7 @@ class GuestHubPage(App):
 
     def stay_card(self):
         return Column(
-            Row(Icon("bed-double"), Text("Your stay", weight="semibold"),
+            Row(Icon("calendar-event"), Text("Your stay", weight="semibold"),
                 align="center", gap=8),
             Text(self.booking.get("guest_label") or "Guest", variant="h3"),
             FactRow("Room", Text(self.booking.get("room_code") or "—")),
@@ -271,7 +296,7 @@ class GuestHubPage(App):
 
     def power_card(self):
         return Column(
-            Row(Icon("zap"), Text("Room power", weight="semibold"),
+            Row(Icon("bolt"), Text("Room power", weight="semibold"),
                 align="center", gap=8),
             Text(self.power_label(), variant="h3"),
             FactRow("Controller", Text(self.power.get("device") or "unassigned")),

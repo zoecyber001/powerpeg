@@ -27,7 +27,7 @@ class PageHeader(Component):
         return Row(
             Expanded(
                 Column(
-                    Text(self.title, variant="heading"),
+                    Text(self.title, variant="title"),
                     Text(self.subtitle, variant="muted"),
                     gap=4,
                 ),
@@ -147,11 +147,14 @@ class StatCard(Component):
         self.detail = detail
 
     def build(self):
-        return Column(
-            Text(self.label, variant="caption"),
-            Text(self.value, variant="title"),
-            Text(self.detail, variant="caption"),
-            gap=2,
+        return Container(
+            Column(
+                Text(self.label, variant="caption"),
+                Text(self.value, variant="title"),
+                Text(self.detail, variant="muted"),
+                gap=4, align="start",
+            ),
+            variant="card", padding=18,
         )
 
 

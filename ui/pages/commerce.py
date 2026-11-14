@@ -66,7 +66,9 @@ from workpeg.ui import (
 )
 
 from components import (
+
     EmptyState,
+
     ErrorState,
     LoadingState,
     PageHeader,
@@ -94,6 +96,64 @@ class MarketplacePage(App):
         set_title("Find a stay")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["payments"] = [
+            {"name": "payment_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "payment_status", "type": "string", "required": True},
+            {"name": "amount", "type": "number"},
+            {"name": "is_simulated", "type": "boolean"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["rooms"] = [
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "display_name", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_type", "type": "string"},
+            {"name": "rate", "type": "number"},
+            {"name": "area", "type": "string"},
+            {"name": "star_rating", "type": "number"},
+            {"name": "pitch", "type": "string"},
+            {"name": "assigned_device_id", "type": "string"},
+            {"name": "authorised", "type": "boolean"},
+            {"name": "authorised_reason", "type": "string"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -115,13 +175,6 @@ class MarketplacePage(App):
             self.error = str(e) or "The marketplace could not be read."
         self.loading = False
 
-    async def table(self, name):
-        """This business's table with that alias, or None."""
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     async def seed_rows(self, table_uuid):
         """A business with no inventory has nothing to sell, so the demo one
@@ -401,6 +454,64 @@ class HotelDetailPage(App):
         self.stay_id = route.stay_id or ""
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["payments"] = [
+            {"name": "payment_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "payment_status", "type": "string", "required": True},
+            {"name": "amount", "type": "number"},
+            {"name": "is_simulated", "type": "boolean"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["rooms"] = [
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "display_name", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_type", "type": "string"},
+            {"name": "rate", "type": "number"},
+            {"name": "area", "type": "string"},
+            {"name": "star_rating", "type": "number"},
+            {"name": "pitch", "type": "string"},
+            {"name": "assigned_device_id", "type": "string"},
+            {"name": "authorised", "type": "boolean"},
+            {"name": "authorised_reason", "type": "string"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -423,12 +534,6 @@ class HotelDetailPage(App):
             self.error = str(e) or "This stay could not be read."
         self.loading = False
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     def build_windows(self):
         """Four two-night windows from tomorrow, in Lagos time.
@@ -931,7 +1036,7 @@ class HotelDetailPage(App):
             Container(
                 Column(
                     Row(
-                        Icon("info", size=16),
+                        Icon("info-circle", size=16),
                         Text("Demo payment", weight="medium"),
                         gap=8,
                         align="center",
@@ -976,7 +1081,7 @@ class HotelDetailPage(App):
         return Container(
             Column(
                 Row(
-                    Icon("check-circle", size=20),
+                    Icon("circle-check", size=20),
                     Text("Your booking is confirmed", variant="title",
                          weight="medium"),
                     gap=10,
@@ -1042,6 +1147,64 @@ class BusinessReservationsPage(App):
         set_title("Reservations")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["payments"] = [
+            {"name": "payment_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "payment_status", "type": "string", "required": True},
+            {"name": "amount", "type": "number"},
+            {"name": "is_simulated", "type": "boolean"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["rooms"] = [
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "display_name", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_type", "type": "string"},
+            {"name": "rate", "type": "number"},
+            {"name": "area", "type": "string"},
+            {"name": "star_rating", "type": "number"},
+            {"name": "pitch", "type": "string"},
+            {"name": "assigned_device_id", "type": "string"},
+            {"name": "authorised", "type": "boolean"},
+            {"name": "authorised_reason", "type": "string"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -1085,12 +1248,6 @@ class BusinessReservationsPage(App):
         return (str(int(text[8:10])) + " " + month + " " + text[0:4] + ", "
                 + text[11:16])
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     async def module_on(self):
         table = await self.table("business_modules")

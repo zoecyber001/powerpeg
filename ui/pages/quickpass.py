@@ -18,6 +18,8 @@ from workpeg.ui import (
 from components import EmptyState, ErrorState, LoadingState, PageHeader, StatCard
 
 
+
+
 class QuickPassPage(App):
     MODULE = "quickpass"
 
@@ -36,6 +38,61 @@ class QuickPassPage(App):
         set_title("QuickPass")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["check_ins"] = [
+            {"name": "check_in_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "arrived_at", "type": "datetime"},
+            {"name": "verified_at", "type": "datetime"},
+            {"name": "approved_at", "type": "datetime"},
+            {"name": "activated_at", "type": "datetime"},
+            {"name": "check_in_status", "type": "string"},
+        ]
+        defs["verifications"] = [
+            {"name": "verification_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string"},
+            {"name": "room_code", "type": "string"},
+            {"name": "provider", "type": "string"},
+            {"name": "session_id", "type": "string"},
+            {"name": "verification_url", "type": "string"},
+            {"name": "provider_status", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "decision", "type": "string"},
+            {"name": "reviewed_by", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+            {"name": "updated_at", "type": "datetime"},
+            {"name": "last_event_id", "type": "string"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -100,12 +157,6 @@ class QuickPassPage(App):
         self.check_ins = lines
         self.check_in_count = len(lines)
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     async def module_on(self):
         table = await self.table("business_modules")

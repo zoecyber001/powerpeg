@@ -23,6 +23,8 @@ class AppShell(Shell):
         set_color_scheme("system")
 
     def build(self):
+        # The platform's Scaffold carries the session gate itself (and
+        # exposes the signed-in user, whose row the role gate reads).
         return Scaffold(
             NavSection(
                 "PegPower Core",
@@ -32,7 +34,7 @@ class AppShell(Shell):
             NavSection(
                 "Modules",
                 NavItem("Commerce", biz_url("/ecommerce/reservations"),
-                        icon="store"),
+                        icon="credit-card"),
                 NavItem("QuickPass", biz_url("/quickpass"), icon="id-badge"),
                 NavItem("Guest Experience & Ops",
                         biz_url("/m/guesthub"),
@@ -44,11 +46,12 @@ class AppShell(Shell):
                 "Operations",
                 NavItem("Front desk", biz_url("/front-desk"),
                         icon="building"),
+                NavItem("Roles", biz_url("/roles"), icon="shield-lock"),
             ),
             NavSection(
                 "Customer experience",
                 NavItem("Marketplace", biz_url("/marketplace"),
-                        icon="store"),
+                        icon="tag"),
                 NavItem("My bookings", biz_url("/customer/bookings"),
                         icon="calendar"),
             ),

@@ -17,7 +17,7 @@ guest eligible, and the receptionist's click is the approval.
 from workpeg.ui import (
     App, State, Padding, Column, Row, Container, Text, Button, Table,
     TableHeader, TableCell, TableRow, Tag, Divider, Icon, Spacer, dates,
-    route, biz_url, navigate, set_title, store, workpeg, toast,
+    route, biz_url, navigate, set_title, store, workpeg, toast, user,
 )
 
 from components import (
@@ -37,6 +37,7 @@ class FrontDeskPage(App):
     action_error = State("")
     action_note = State("")
     busy = State(False)
+    my_role = State("")
     arrivals = State([])
     requests = State([])
     arriving_count = State(0)
@@ -51,6 +52,124 @@ class FrontDeskPage(App):
 
     # ── reading ──────────────────────────────────────────────────────────
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["staff_members"] = [
+            {"name": "staff_member_id", "type": "string", "required": True},
+            {"name": "name", "type": "string", "required": True},
+            {"name": "email", "type": "string"},
+            {"name": "role", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["authorizations"] = [
+            {"name": "event_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "authorization_type", "type": "string"},
+            {"name": "status", "type": "string", "required": True},
+            {"name": "source", "type": "string"},
+            {"name": "issued_by", "type": "string"},
+            {"name": "issued_at", "type": "datetime"},
+            {"name": "expires_at", "type": "datetime"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        defs["check_ins"] = [
+            {"name": "check_in_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "arrived_at", "type": "datetime"},
+            {"name": "verified_at", "type": "datetime"},
+            {"name": "approved_at", "type": "datetime"},
+            {"name": "activated_at", "type": "datetime"},
+            {"name": "check_in_status", "type": "string"},
+        ]
+        defs["commands"] = [
+            {"name": "command_id", "type": "string", "required": True},
+            {"name": "device_code", "type": "string", "required": True},
+            {"name": "command", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_code", "type": "string"},
+            {"name": "issued_at", "type": "datetime"},
+            {"name": "sent_at", "type": "datetime"},
+            {"name": "expires_at", "type": "datetime"},
+            {"name": "acknowledged_at", "type": "datetime"},
+            {"name": "authorization_event_id", "type": "string"},
+            {"name": "idempotency_key", "type": "string"},
+            {"name": "failure_reason", "type": "string"},
+            {"name": "device_reported_state", "type": "json"},
+        ]
+        defs["devices"] = [
+            {"name": "device_code", "type": "string", "required": True},
+            {"name": "room_code", "type": "string"},
+            {"name": "device_type", "type": "string"},
+            {"name": "connection_status", "type": "string"},
+            {"name": "reported_relay_state", "type": "string"},
+            {"name": "last_seen_at", "type": "datetime"},
+            {"name": "firmware", "type": "string"},
+        ]
+        defs["service_requests"] = [
+            {"name": "request_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string"},
+            {"name": "guest_label", "type": "string"},
+            {"name": "category", "type": "string", "required": True},
+            {"name": "detail", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "assigned_to", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        defs["staff_tasks"] = [
+            {"name": "task_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string"},
+            {"name": "kind", "type": "string", "required": True},
+            {"name": "room_code", "type": "string"},
+            {"name": "detail", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "assigned_to", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+        ]
+        defs["verifications"] = [
+            {"name": "verification_id", "type": "string", "required": True},
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string"},
+            {"name": "room_code", "type": "string"},
+            {"name": "provider", "type": "string"},
+            {"name": "session_id", "type": "string"},
+            {"name": "verification_url", "type": "string"},
+            {"name": "provider_status", "type": "string"},
+            {"name": "status", "type": "string"},
+            {"name": "decision", "type": "string"},
+            {"name": "reviewed_by", "type": "string"},
+            {"name": "created_at", "type": "datetime"},
+            {"name": "updated_at", "type": "datetime"},
+            {"name": "last_event_id", "type": "string"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -72,9 +191,35 @@ class FrontDeskPage(App):
             self.arrivals = lines
             self.count(lines)
             await self.read_requests(rooms)
+            await self.read_my_role()
         except Exception as e:
             self.error = e.message
         self.loading = False
+
+    async def read_my_role(self):
+        """The signed-in user's role, from this business's staff rows.
+
+        Matched on the session's email, then its name; no match means no
+        role, and the desk's gated actions close rather than opening to an
+        unidentified user.
+        """
+        email = str(user.email or "").lower()
+        name = str(user.name or "")
+        role = ""
+        table = await self.table("staff_members")
+        if table is not None:
+            rows = await workpeg.get_rows(table["uuid"], limit=200)
+            for row in rows:
+                data = row.get("data") or {}
+                row_email = str(data.get("email") or "").lower()
+                row_name = str(data.get("name") or "")
+                row_role = data.get("role") or ""
+                if role == "":
+                    if email and row_email and email == row_email:
+                        role = row_role
+                    elif name and row_name and name == row_name:
+                        role = row_role
+        self.my_role = role
 
     def count(self, lines):
         arriving = 0
@@ -263,12 +408,6 @@ class FrontDeskPage(App):
         else:
             return "no dates recorded"
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     # ── writing ──────────────────────────────────────────────────────────
 
@@ -602,7 +741,7 @@ class FrontDeskPage(App):
             )
         elif self.action_note != "":
             return Container(
-                Row(Icon("check-circle", size=16),
+                Row(Icon("circle-check", size=16),
                     Text(self.action_note, variant="muted"),
                     gap=10, align="start"),
                 variant="card", padding=14,
@@ -642,6 +781,14 @@ class FrontDeskPage(App):
         navigate(biz_url("/guest/" + booking_id))
 
     def actions(self, line):
+        if self.my_role not in ["owner", "manager", "front_desk"]:
+            return Row(
+                Text("Closed: approving a check-in needs the owner, manager"
+                     " or front desk role; the signed-in user holds"
+                     " '" + (self.my_role or "none") + "' (see Roles).",
+                     variant="caption"),
+                align="center",
+            )
         if line["can_approve"]:
             if line["review"]:
                 return Row(
@@ -670,7 +817,7 @@ class FrontDeskPage(App):
                 )
         elif line["can_checkout"]:
             return Row(
-                Button("Check out", variant="outline-gray", icon="log-out",
+                Button("Check out", variant="outline-gray", icon="logout",
                        on_click=lambda: self.checkout(line["booking_id"])),
                 Button("RoomPower", variant="outline-gray", icon="cpu",
                        on_click=self.open_roompower),

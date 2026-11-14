@@ -17,6 +17,8 @@ from workpeg.ui import (
 from components import EmptyState, ErrorState, LoadingState, PageHeader
 
 
+
+
 class ModulePage(App):
     loading = State(True)
     error = State("")
@@ -37,14 +39,38 @@ class ModulePage(App):
         set_title("Module")
         await self.load()
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["business_modules"] = [
+            {"name": "business_module_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "module_id", "type": "string", "required": True},
+            {"name": "installed", "type": "boolean"},
+            {"name": "enabled", "type": "boolean"},
+            {"name": "installed_at", "type": "datetime"},
+            {"name": "enabled_at", "type": "datetime"},
+            {"name": "disabled_at", "type": "datetime"},
+            {"name": "source", "type": "string"},
+            {"name": "metadata", "type": "json"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         try:
             self.error = ""
-            tables = await workpeg.get_tables()
-            table = None
-            for candidate in tables:
-                if candidate.get("name") == "business_modules":
-                    table = candidate
+            table = await self.table("business_modules")
             found = {}
             if table is not None:
                 rows = await workpeg.get_rows(table["uuid"], limit=100)

@@ -14,6 +14,8 @@ from workpeg.ui import (
 from components import EmptyState, ErrorState, LoadingState, PageHeader
 
 
+
+
 class CustomerBookingsPage(App):
     loading = State(True)
     error = State("")
@@ -26,6 +28,30 @@ class CustomerBookingsPage(App):
 
     # ── reading ──────────────────────────────────────────────────────────
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["bookings"] = [
+            {"name": "booking_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "guest_label", "type": "string", "required": True},
+            {"name": "start_at", "type": "datetime", "required": True},
+            {"name": "end_at", "type": "datetime", "required": True},
+            {"name": "booking_status", "type": "string"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -68,12 +94,6 @@ class CustomerBookingsPage(App):
                 out[value] = data
         return out
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -116,7 +136,7 @@ class CustomerBookingsPage(App):
                     "The stays reserved in this business. Open a stay's hub"
                     " to see it the way the guest does.",
                     Button("Marketplace", variant="outline-gray",
-                           icon="store", on_click=self.open_marketplace),
+                           icon="tag", on_click=self.open_marketplace),
                 ),
                 self.body(),
                 gap=24,
@@ -139,7 +159,7 @@ class CustomerBookingsPage(App):
                 "No stays yet",
                 "When a stay is reserved at the marketplace it appears here.",
                 Button("Open the marketplace", variant="outline-gray",
-                       icon="store", on_click=self.open_marketplace),
+                       icon="tag", on_click=self.open_marketplace),
             )
         else:
             return Column(

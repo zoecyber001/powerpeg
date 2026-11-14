@@ -91,6 +91,43 @@ the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
 
 ## In progress / next
 
+0. **The workspace now holds together (2026-11-14, later).** The user's
+   screenshots (blank overview, vanishing rail/AI, white-square icons, "no
+   rooms table") traced to three real causes, all fixed:
+   - **Routing**: `AppShell` was a flat route, not the documented
+     `Shell(AppShell, "/b/[business_id]", [...])` nesting — the rail only
+     existed on the bare `/b/<id>` URL (Outlet with no child = blank
+     Overview) and every module page rendered shell-less (collapse buttons
+     and Workpeg AI vanished). Routes now nest under the shell; the
+     chrome persists.
+   - **Icons**: 8 icon names did not exist in the platform's embedded
+     Tabler set (`store`, `zap`, `zap-off`, `power-off`, `check-circle`,
+     `bed-double`, `log-out`, `info`) — the white squares. Replaced with
+     real ones (`credit-card`, `bolt`, `minus`, `hand-stop`,
+     `circle-check`, `calendar-event`, `logout`, `info-circle`, `tag`).
+   - **Tables**: pages only *looked up* tables, so a fresh business got
+     "no rooms table yet". Every page class now carries a `table(name)`
+     method that creates a missing table from the manifest's own column
+     definitions on first use (`workpeg.create_table`). Cross-module
+     base classes are refused by the compiler (and mis-compile silently),
+     so the logic is per class.
+   - **Roles / access control (new)**: 19th manifest table `staff_members`;
+     the function gained a role catalog (owner, manager, front_desk,
+     housekeeping, maintenance), a permission matrix, and dispatch-time
+     enforcement — mutating actions refuse under-privileged and
+     unidentified callers (`actor_role`). New `/roles` page (rail:
+     Operations → Roles): role catalog, staff list, add-member form gated
+     to owner/manager, and a labelled "Add me as Owner (demo)" seed. The
+     front desk now gates Approve/checkout actions on the signed-in
+     user's role from the staff list.
+   - Styling pass: PageHeader title scale, StatCard as a real card.
+   Tests: **90 passed** (`test_access_control` new). UI builds; shell
+   check green; dev server verified serving the new bundle by SHA-256.
+   Unverified live: create_table against the real Tables API, and the
+   `user.email` field name from `/v1/users/me/` (the role match falls
+   back to name, and to "not on the staff list" gracefully).
+
+
 0. **Demo-path fixes (2026-11-14).** Two gaps from the docs audit are closed:
    the front desk gained **Record demo identity check** (writes a
    `verifications` row with provider `demo` and a demo session id — the desk,

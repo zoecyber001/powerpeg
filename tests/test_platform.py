@@ -36,6 +36,10 @@ def check(name: str, condition: object, detail: object = "") -> None:
 
 
 def call(action: str, **data):
+    # The tests act as the owner: every mutating action names its caller's
+    # role in the payload, and the access-control matrix is exercised
+    # separately in test_access_control.
+    data.setdefault("actor_role", "owner")
     return main(None, {"action": action, "data": data})
 
 
@@ -410,6 +414,67 @@ def test_route_guard() -> None:
               for m in call("module_surface", business_id="biz-r")["surface"]["modules"]))
 
 
+def test_access_control() -> None:
+    print("\n[access control]")
+    from app import roles
+
+    # The matrix: who holds what, and who does not.
+    check("owner holds every permission",
+          roles.permissions_for("owner") == sorted(roles.PERMISSIONS))
+    check("front desk may approve a check-in",
+          roles.role_may("front_desk", "checkin.approve"))
+    check("front desk may not manage staff",
+          not roles.role_may("front_desk", "staff.manage"))
+    check("housekeeping may not confirm a payment",
+          not roles.role_may("housekeeping", "payments.record"))
+    check("maintenance may queue a device command",
+          roles.role_may("maintenance", "devices.command"))
+    check("housekeeping may not queue a device command",
+          not roles.role_may("housekeeping", "devices.command"))
+    check("an unidentified caller holds nothing",
+          roles.permissions_for("") == []
+          and not roles.role_may("", "bookings.write"))
+    check("role aliases normalise (frontdesk -> front_desk)",
+          roles.role_may("FrontDesk", "checkin.approve"))
+
+    # Enforcement at dispatch: a mutating action refuses loudly.
+    denied = call("confirm_payment", booking_id="B-1")
+    check("an unidentified caller is refused a mutating action",
+          denied.get("ok") is False and denied.get("refused") is True
+          and "access control" in denied.get("error", ""))
+    under_privileged = call("staff_add", name="X", actor_role="housekeeping")
+    check("an under-privileged role is refused",
+          under_privileged.get("ok") is False
+          and under_privileged.get("refused") is True
+          and under_privileged.get("role") == "housekeeping")
+    allowed = call("confirm_payment", booking_id="B-1", actor_role="front_desk")
+    check("front desk passes the gate and reaches the action"
+          " (its own validation answers)",
+          "refused" not in allowed)
+
+    # The staff actions behind staff.manage.
+    added = call("staff_add", name="Ada Okonkwo", email="ada@powerpeg.dev",
+                 role="front_desk")
+    member = added.get("staff_member") or {}
+    check("staff_add records the member with the named role",
+          added.get("ok") is True and member.get("role") == "front_desk")
+    bad_role = call("staff_add", name="X", role="chief")
+    check("an unknown role is refused, not silently granted",
+          bad_role.get("ok") is False and "unknown role" in bad_role.get("error", ""))
+    removed = call("staff_remove", staff_member_id=member.get("staff_member_id"))
+    check("staff_remove takes the member off the list",
+          removed.get("ok") is True)
+    gone = call("staff_remove", staff_member_id=member.get("staff_member_id"))
+    check("removing twice fails honestly",
+          gone.get("ok") is False)
+
+    # The catalog action is an open read.
+    cat = call("roles_catalog")
+    check("roles_catalog names the roles and permissions",
+          cat.get("ok") is True and "owner" in (cat.get("roles") or {})
+          and "checkin.approve" in (cat.get("permissions") or {}))
+
+
 def test_hook_dispatch_by_table() -> None:
     print("\n[hooks route on the context's table]")
     # The platform's hook envelope carries the row's data keyed by column
@@ -456,6 +521,7 @@ def run() -> int:
         test_command_lifecycle,
         test_checkout_policy,
         test_vertical_slice,
+        test_access_control,
         test_route_guard,
         test_hook_dispatch_by_table,
         test_unknown_action,

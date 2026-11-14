@@ -20,7 +20,9 @@ from workpeg.ui import (
 )
 
 from components import (
+
     FactRow,
+
     EmptyState,
     ErrorState,
     LoadingState,
@@ -60,6 +62,82 @@ class RoomPowerDevicePage(App):
 
     # ── reading ──────────────────────────────────────────────────────────
 
+    async def table(self, name):
+        """This business's table with that name, created if absent.
+
+        The definitions mirror the manifest, so a table the business
+        has never used is created here on first use instead of
+        answering "no such table"."""
+        defs = {}
+        defs["authorizations"] = [
+            {"name": "event_id", "type": "string", "required": True},
+            {"name": "business_id", "type": "string", "required": True},
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "authorization_type", "type": "string"},
+            {"name": "status", "type": "string", "required": True},
+            {"name": "source", "type": "string"},
+            {"name": "issued_by", "type": "string"},
+            {"name": "issued_at", "type": "datetime"},
+            {"name": "expires_at", "type": "datetime"},
+            {"name": "metadata", "type": "json"},
+        ]
+        defs["commands"] = [
+            {"name": "command_id", "type": "string", "required": True},
+            {"name": "device_code", "type": "string", "required": True},
+            {"name": "command", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_code", "type": "string"},
+            {"name": "issued_at", "type": "datetime"},
+            {"name": "sent_at", "type": "datetime"},
+            {"name": "expires_at", "type": "datetime"},
+            {"name": "acknowledged_at", "type": "datetime"},
+            {"name": "authorization_event_id", "type": "string"},
+            {"name": "idempotency_key", "type": "string"},
+            {"name": "failure_reason", "type": "string"},
+            {"name": "device_reported_state", "type": "json"},
+        ]
+        defs["device_reports"] = [
+            {"name": "report_id", "type": "text"},
+            {"name": "device_code", "type": "text"},
+            {"name": "room_code", "type": "text"},
+            {"name": "command_id", "type": "text"},
+            {"name": "relay_state", "type": "text"},
+            {"name": "source", "type": "text"},
+            {"name": "reported_at", "type": "text"},
+            {"name": "note", "type": "text"},
+        ]
+        defs["devices"] = [
+            {"name": "device_code", "type": "string", "required": True},
+            {"name": "room_code", "type": "string"},
+            {"name": "device_type", "type": "string"},
+            {"name": "connection_status", "type": "string"},
+            {"name": "reported_relay_state", "type": "string"},
+            {"name": "last_seen_at", "type": "datetime"},
+            {"name": "firmware", "type": "string"},
+        ]
+        defs["rooms"] = [
+            {"name": "room_code", "type": "string", "required": True},
+            {"name": "display_name", "type": "string", "required": True},
+            {"name": "status", "type": "string"},
+            {"name": "room_type", "type": "string"},
+            {"name": "rate", "type": "number"},
+            {"name": "area", "type": "string"},
+            {"name": "star_rating", "type": "number"},
+            {"name": "pitch", "type": "string"},
+            {"name": "assigned_device_id", "type": "string"},
+            {"name": "authorised", "type": "boolean"},
+            {"name": "authorised_reason", "type": "string"},
+            {"name": "updated_at", "type": "datetime"},
+        ]
+        tables = await workpeg.get_tables()
+        for candidate in tables:
+            if candidate.get("name") == name:
+                return candidate
+        definition = defs.get(name)
+        if definition is None:
+            return None
+        return await workpeg.create_table({"name": name,
+                                            "columns": definition})
     async def load(self):
         self.loading = True
         self.error = ""
@@ -381,12 +459,6 @@ class RoomPowerDevicePage(App):
 
     # ── helpers ──────────────────────────────────────────────────────────
 
-    async def table(self, name):
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
-        return None
 
     def now_iso(self):
         return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
@@ -585,9 +657,9 @@ class RoomPowerDevicePage(App):
                     Button("Request power on", variant="primary",
                            icon="power", on_click=self.power_on),
                     Button("Cut non-essential", variant="outline-gray",
-                           icon="zap-off", on_click=self.cut_essential),
+                           icon="minus", on_click=self.cut_essential),
                     Button("Request power off", variant="outline-gray",
-                           icon="power-off", on_click=self.power_off),
+                           icon="hand-stop", on_click=self.power_off),
                     gap=10,
                     align="center",
                 ),
@@ -627,7 +699,7 @@ class RoomPowerDevicePage(App):
             )
         elif self.action_note != "":
             return Container(
-                Row(Icon("check-circle", size=16),
+                Row(Icon("circle-check", size=16),
                     Text(self.action_note, variant="muted"),
                     gap=10, align="start"),
                 variant="card",

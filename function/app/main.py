@@ -85,6 +85,7 @@ from typing import Any, Dict, List, Optional
 from . import commands
 from . import guestops
 from . import quickpass
+from . import roles
 from . import roompower
 from .authorization import (
     authorize_room_activation,
@@ -253,6 +254,7 @@ _TABLES: Dict[str, Dict[str, Dict[str, Any]]] = {
     "commands": {},
     "telemetry": {},
     "alerts": {},
+    "staff_members": {},
 }
 
 _SEEDED = False
@@ -1830,6 +1832,55 @@ def _hook_row_data(data: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Staff & roles: the action side of the access-control catalog
+# ---------------------------------------------------------------------------
+
+def staff_add(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Put a person on this business's staff list, under one named role.
+
+    The role must be one the catalog spells: an unknown role is refused,
+    because a role the matrix does not know would silently hold no
+    permissions — a grant that looks like one and works like none.
+    """
+    name = str(data.get("name") or "").strip()
+    role = roles.normalize_role(data.get("role"))
+    if not name:
+        return {"ok": False, "error": "name is required"}
+    if role not in roles.ROLES:
+        return {
+            "ok": False,
+            "error": f"unknown role {role!r}; one of:"
+                     f" {', '.join(sorted(roles.ROLES))}",
+        }
+    staff_id = str(data.get("staff_member_id") or "").strip()
+    if not staff_id:
+        staff_id = "STAFF-" + str(len(_TABLES["staff_members"]) + 1)
+        while staff_id in _TABLES["staff_members"]:
+            staff_id += "-alt"
+    row = {
+        "staff_member_id": staff_id,
+        "name": name,
+        "email": str(data.get("email") or "").strip(),
+        "role": role,
+        "status": str(data.get("status") or "active"),
+        "created_at": data.get("created_at") or _utc_now(),
+        "updated_at": _utc_now(),
+        "business_id": str(data.get("business_id") or ""),
+    }
+    _TABLES["staff_members"][staff_id] = row
+    return {"ok": True, "staff_member": row}
+
+
+def staff_remove(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Take a person off the staff list: the row is gone, not disabled."""
+    staff_id = str(data.get("staff_member_id") or "")
+    removed = _TABLES["staff_members"].pop(staff_id, None)
+    if removed is None:
+        return {"ok": False, "error": f"no staff member {staff_id!r}"}
+    return {"ok": True, "removed": removed}
+
+
 def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
     """Workpeg function entrypoint: app.main:main.
 
@@ -1882,6 +1933,26 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
         if handler is not None:
             row = data if isinstance(data, dict) else {}
             return handler(_hook_row_data(row, context))
+
+    # ---- Access control: the caller states its role, the matrix decides ----
+    # Mutating actions name the permission they need; an under-privileged or
+    # unidentified caller is refused on the record. Hooks above are the
+    # platform's own saves and carry no actor, so they are not gated.
+    permission = roles.permission_for_action(action)
+    if permission is not None:
+        actor_role = ""
+        if isinstance(data, dict):
+            actor_role = data.get("actor_role", "")
+        if not roles.role_may(actor_role, permission):
+            return roles.refuse(action, actor_role)
+
+    # ---- Staff & roles ----
+    if action == "staff_add":
+        return staff_add(data)
+    if action == "staff_remove":
+        return staff_remove(data)
+    if action == "roles_catalog":
+        return {"ok": True, **roles.catalog()}
 
     # ---- RoomPower: the AZ3166 twin ----
     if action == "twin_ack":
