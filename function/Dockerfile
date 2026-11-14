@@ -1,5 +1,5 @@
 # Workpeg builds function images without internet access, so nothing here may be
-# fetched from PyPI. The base image already carries the workpeg runtime (0.157.0),
+# fetched from PyPI. The base image already carries the workpeg runtime (0.163.0),
 # Python 3.12, the appuser, WORKDIR /app and the
 # `workpeg function runtime --server` entrypoint.
 #
@@ -9,7 +9,7 @@
 #   pip download --only-binary=:all: --dest wheels --python-version 3.12 \
 #     --implementation cp --abi cp312 --platform manylinux2014_x86_64 \
 #     -r requirements.txt
-FROM registry.gitlab.com/workpeg/workpeg-sdk/pegfn-base:0.157.0
+FROM registry.gitlab.com/workpeg/workpeg-sdk/pegfn-base:0.163.0
 
 COPY wheels /wheels
 COPY requirements.txt /app/requirements.txt

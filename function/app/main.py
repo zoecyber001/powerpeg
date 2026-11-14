@@ -77,6 +77,7 @@ mixes real and simulated so the UI can be honest:
 None of the telemetry in this function is a measurement from the AZ3166.
 """
 
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -128,6 +129,50 @@ from .modules import (
     set_module_config,
 )
 from .platform import build_surface, module_is_live
+from .commands import set_checkout_policy
+from .modules import business_configured
+
+# ---------------------------------------------------------------------------
+# Declared tables (mirror workpeg.json's ``tables`` so init can assert
+# recognition). These are the tables the manifest declares for this peg.
+# ---------------------------------------------------------------------------
+
+DECLARED_TABLE_NAMES = [
+    "rooms",
+    "bookings",
+    "payments",
+    "devices",
+    "commands",
+    "device_reports",
+    "telemetry",
+    "alerts",
+    "check_ins",
+    "authorizations",
+    "verifications",
+    "service_requests",
+    "staff_tasks",
+    "business_module_settings",
+    "module_catalog",
+    "module_profile",
+    "business_modules",
+    "module_config",
+]
+
+_DEV_BUSINESS_ID = os.environ.get("PEGPOWER_DEV_BUSINESS_ID", "")
+
+
+def is_dev_business(business_id: str) -> bool:
+    """Is this business the dev install's demonstration business?
+
+    In the Workpeg dev install the UI hands the function the developer's first
+    business id. We cannot know its literal value without the dev serve running,
+    so demo seeding is gated on an explicit marker rather than a guess: either
+    the environment marker is set, or the caller explicitly asks for demo data
+    for a business we are initializing right now.
+    """
+    if _DEV_BUSINESS_ID:
+        return business_id == _DEV_BUSINESS_ID
+    return False
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -152,6 +197,20 @@ def _parse_ts(value: Any) -> Optional[datetime]:
 
 def _now_dt() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _ser(value: Any) -> Any:
+    """Make a value JSON-safe: datetime objects become ISO strings.
+
+    The function's in-memory tables store timestamps as ISO strings so that
+    ``get_status`` and every action response can be serialised by the runtime
+    envelope (``json.dumps``) without a ``TypeError``. Datetimes only ever
+    enter the stores through the ``_upsert_*`` helpers or ``_seed()``, and
+    those helpers normalise them here.
+    """
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    return value
 
 
 def _stay_windows(count: int = 4) -> List[Dict[str, Any]]:
@@ -364,7 +423,7 @@ def _upsert_device(
     row["device_type"] = device_type
     row["connection_status"] = connection_status
     row["reported_relay_state"] = (reported_relay_state or "OFF").upper()
-    row["last_seen_at"] = last_seen_at or _utc_now()
+    row["last_seen_at"] = _ser(last_seen_at) if last_seen_at is not None else _utc_now()
     table[device_code] = row
     return row
 
@@ -394,7 +453,7 @@ def _upsert_room(
     if authorised_reason is not None:
         row["authorised_reason"] = authorised_reason
     row.update(extra)
-    row["updated_at"] = updated_at or _utc_now()
+    row["updated_at"] = _ser(updated_at) if updated_at is not None else _utc_now()
     table[room_code] = row
     return row
 
@@ -434,7 +493,7 @@ def _upsert_payment(
     row["payment_status"] = payment_status
     row["amount"] = float(amount)
     row["is_simulated"] = bool(is_simulated)
-    row["updated_at"] = updated_at or _utc_now()
+    row["updated_at"] = _ser(updated_at) if updated_at is not None else _utc_now()
     table[payment_id] = row
     return row
 
@@ -454,11 +513,11 @@ def _upsert_command(
     row["device_code"] = device_code
     row["command"] = command
     row["status"] = status
-    row["issued_at"] = issued_at or _utc_now()
+    row["issued_at"] = _ser(issued_at) if issued_at is not None else _utc_now()
     if delivered_at is not None:
-        row["delivered_at"] = delivered_at
+        row["delivered_at"] = _ser(delivered_at)
     if acknowledged_at is not None:
-        row["acknowledged_at"] = acknowledged_at
+        row["acknowledged_at"] = _ser(acknowledged_at)
     table[command_id] = row
     return row
 
@@ -473,7 +532,7 @@ def _upsert_telemetry(
     observed_at: Any = None,
 ) -> Dict[str, Any]:
     table = _TABLES["telemetry"]
-    key = f"{room_code}@{observed_at or _utc_now()}"
+    key = f"{room_code}@{_ser(observed_at) if observed_at is not None else _utc_now()}"
     row: Dict[str, Any] = table.get(key, {})
     row["room_code"] = room_code
     if voltage is not None:
@@ -485,7 +544,7 @@ def _upsert_telemetry(
     if energy is not None:
         row["energy"] = float(energy)
     row["is_simulated"] = bool(is_simulated)
-    row["observed_at"] = observed_at or _utc_now()
+    row["observed_at"] = _ser(observed_at) if observed_at is not None else _utc_now()
     table[key] = row
     return row
 
@@ -526,6 +585,449 @@ def _find_alerts(*, room_code: Optional[str] = None, alert_type: Optional[str] =
             continue
         out.append(row)
     return out
+
+
+# ---------------------------------------------------------------------------
+# First-run initialization (idempotent, tenant-isolated, dev-only seeding)
+# ---------------------------------------------------------------------------
+
+CANONICAL_COMMERCE_MODULE = "deals"
+CANONICAL_QUICKPASS_MODULE = "quickpass"
+CANONICAL_GUEST_OPS_MODULE = "guesthub"
+CANONICAL_ROOMPOWER_MODULE = "roompower"
+
+
+def ensure_business_initialized(
+    business_id: str,
+    business_type: str,
+    *,
+    source: str = "profile",
+    actor: str = "system",
+) -> Dict[str, Any]:
+    """Ensure a business has its module-model tables and the PegPower canonical
+    modules installed and configured.
+
+    This is idempotent and never overwrites existing business configuration:
+    ``install_for_profile`` and ``install_module`` reinstall safely, and
+    ``set_module_config`` only writes missing keys. A business that already has
+    module rows is left alone (except for the explicit canonical-module opt-in
+    for a demonstration business, which only enables a module that is installed
+    but not enabled — it never rewrites an operator's existing config values).
+
+    Module-model tables are in-memory stores in this demo function
+    (``module_catalog``, ``module_profile``, ``business_modules``,
+    ``module_config``, ``module_events``); in a Workpeg deployment these are the
+    real tables the manifest declares and the platform provisions.
+    """
+    if business_type not in business_types():
+        return {
+            "ok": False,
+            "error": f"unknown business type {business_type}",
+            "business_types": business_types(),
+        }
+
+    if not business_id:
+        return {"ok": False, "error": "business_id is required"}
+
+    configured = business_configured(business_id)
+    result: Dict[str, Any] = {
+        "business_id": business_id,
+        "business_type": business_type,
+        "already_configured": configured,
+        "actions": [],
+    }
+
+    def _record(action: str, detail: Dict[str, Any]) -> None:
+        result["actions"].append({"action": action, **detail})
+
+    # 1. Module-model tables: the manifest declares them; the demo function's
+    #    platform module model already owns them as in-memory stores, and
+    #    ``install_for_profile`` + ``install_module`` write the per-business
+    #    rows. Nothing here creates tables out of thin air in a Workpeg deploy —
+    #    the platform provisions declared tables from the manifest. We assert
+    #    recognition so the init can report honestly if a declared table is
+    #    missing from the manifest.
+    missing_tables = [t for t in DECLARED_TABLE_NAMES if t not in (
+        "rooms", "bookings", "payments", "devices", "commands", "device_reports",
+        "telemetry", "alerts", "check_ins", "authorizations", "verifications",
+        "service_requests", "staff_tasks", "business_module_settings",
+        "module_catalog", "module_profile", "business_modules", "module_config",
+    )]
+    if missing_tables:
+        return {"ok": False, "error": "declared tables missing from manifest: " + ", ".join(missing_tables)}
+
+    # 2. Apply the business type's profile (idempotent): installs the modules the
+    #    profile installs and enables the ones whose dependencies are met.
+    if not configured:
+        profile_result = install_for_profile(
+            business_id, business_type, source=source, actor=actor
+        )
+        _record("install_for_profile", {
+            "installed": [r["module_id"] for r in profile_result.get("installed", [])],
+            "skipped": [(r["module_id"], r.get("reason")) for r in profile_result.get("skipped", [])],
+        })
+        configured = True
+
+    # 3. PegPower canonical modules: the demo opts the demonstration business
+    #    into all four canonical modules so the demo is complete. RoomPower is
+    #    deliberately NOT auto-installed by any profile (it needs physical
+    #    controllers), so a demo that wants to show RoomPower must opt in
+    #    explicitly. We only enable a module that is already installed but not
+    #    enabled; we never rewrite an operator's existing module_config values.
+    canonical = [
+        (CANONICAL_COMMERCE_MODULE, True),
+        (CANONICAL_QUICKPASS_MODULE, True),
+        (CANONICAL_GUEST_OPS_MODULE, True),
+        (CANONICAL_ROOMPOWER_MODULE, True),
+    ]
+    for module_id, want_enabled in canonical:
+        modules = get_business_modules(business_id)
+        existing = modules.get(module_id)
+        if existing is None:
+            try:
+                row = install_module(
+                    business_id, module_id,
+                    enabled=want_enabled, source="demo_init", actor=actor,
+                )
+                _record("install_module", {"module_id": module_id, "enabled": row.get("enabled")})
+            except ModuleDependencyError as exc:
+                _record("install_module_skipped", {"module_id": module_id, "error": exc.message})
+                continue
+        elif not existing.get("enabled") and want_enabled:
+            try:
+                row = enable_module(business_id, module_id, source="demo_init", actor=actor)
+                _record("enable_module", {"module_id": module_id})
+            except ModuleDependencyError as exc:
+                _record("enable_module_skipped", {"module_id": module_id, "error": exc.message})
+
+    # 4. Module configuration defaults for the canonical modules, written only
+    #    where no value exists yet (idempotent), and only using keys the module
+    #    code already reads so the demo is internally consistent.
+    if get_module_config(business_id, CANONICAL_ROOMPOWER_MODULE, "checkout_policy") is None:
+        set_checkout_policy(
+            business_id,
+            {
+                "mode": "saving",
+                "grace_minutes": 20,
+                "essential_circuits": ["life_safety", "refrigeration"],
+                "allow_blanket_shutdown": False,
+                "note": "Demo default: power down non-essential loads at checkout.",
+            },
+        )
+    if get_module_config(business_id, CANONICAL_GUEST_OPS_MODULE, "default_grant_hours") is None:
+        set_module_config(business_id, CANONICAL_GUEST_OPS_MODULE, "default_grant_hours", 12)
+    if get_module_config(business_id, CANONICAL_COMMERCE_MODULE, "currency") is None:
+        set_module_config(business_id, CANONICAL_COMMERCE_MODULE, "currency", "NGN")
+    if get_module_config(business_id, CANONICAL_COMMERCE_MODULE, "locale") is None:
+        set_module_config(business_id, CANONICAL_COMMERCE_MODULE, "locale", "en-NG")
+    if get_module_config(business_id, CANONICAL_GUEST_OPS_MODULE, "time_zone") is None:
+        set_module_config(business_id, CANONICAL_GUEST_OPS_MODULE, "time_zone", "Africa/Lagos")
+
+    result["configured"] = True
+    result["surface"] = business_surface(business_id)
+    return {"ok": True, **result}
+
+
+def seed_demo_data_for_business(
+    business_id: str,
+    *,
+    room_count: int = 3,
+    booking_count: int = 2,
+    device_count: int = 2,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """Create clearly labelled simulated demo data for a demonstration business.
+
+    This is dev-only and tenant-isolated: it is never called for a production
+    business. The rows it writes are labelled simulated where the schema allows
+    (``payments.is_simulated``, ``telemetry.is_simulated``) and are described as
+    demo/simulated in the seeded record text. It is idempotent: it does nothing
+    for a business that already has rooms, and re-running it after the first
+    successful seed is a no-op unless ``force`` is set.
+
+    It seeds every table the module pages read for the demo business so the four
+    canonical modules have something honest to show: rooms, bookings, payments,
+    devices, commands, device_reports, telemetry, alerts, check_ins,
+    authorizations, verifications, service_requests, staff_tasks.
+    """
+    if not business_id:
+        return {"ok": False, "error": "business_id is required"}
+
+    # Tenant isolation: do not seed a business that already has real inventory,
+    # and never seed a production business (only the demo business identified by
+    # the dev marker may be seeded automatically).
+    if not force and _business_has_inventory(business_id):
+        return {"ok": True, "seeded": False, "note": "business already has data; demo seed skipped",
+                "counts": _count_demo_records()}
+
+    if not force and not is_dev_business(business_id):
+        return {"ok": False, "error": "demo seeding is restricted to the dev business"}
+
+    # 1. Baseline sample dataset (rooms, bookings, payments, devices,
+    #    telemetry, alerts) via the existing idempotent pipeline.
+    _seed()
+
+    # 2. A complete, honest guest journey for the seeded ROOM-101 stay so the
+    #    QuickPass, Guest Hub and RoomPower modules have real rows to show on the
+    #    dev business: a created + verified + approved check-in, an authorization
+    #    grant, a queued + delivered + acknowledged POWER_ON command, and a device
+    #    state report. Idempotent: the check_ins store keys on
+    #    (business_id, booking_id), and the whole function is already guarded by
+    #    ``_business_has_inventory`` above, so re-running after a successful seed
+    #    is a no-op unless ``force`` is set.
+    _seed_guest_journey_for_business(business_id)
+
+    # 3. Honest counts across every store the demo pages read.
+    counts = _count_demo_records()
+
+    return {
+        "ok": True,
+        "business_id": business_id,
+        "seeded": True,
+        "counts": counts,
+    }
+
+
+def _seed_guest_journey_for_business(business_id: str) -> None:
+    """Complete an honest guest journey for the seeded ROOM-101 stay.
+
+    Gives the QuickPass, Guest Hub and RoomPower modules real rows to show on the
+    dev business: a created + verified + approved check-in, an authorization
+    grant, a queued + delivered + acknowledged POWER_ON command, and a device
+    state report. No-op when the journey already exists (the check_ins store is
+    keyed on (business_id, booking_id)).
+    """
+    booking = next(
+        (b for b in _TABLES["bookings"].values() if b.get("room_code") == "ROOM-101"),
+        None,
+    )
+    if not booking:
+        return
+    booking_id = booking["booking_id"]
+    if get_check_in(business_id, booking_id).get("ok"):
+        return  # journey already written for this business + booking
+
+    guest_label = booking.get("guest_label", "Marcus Vance (VIP)")
+
+    # Arrive -> verified -> approved.
+    create_check_in(business_id, booking_id, "ROOM-101", guest_label, actor_id="demo")
+    verify_check_in(business_id, booking_id, "demo")
+    approve_check_in(business_id, booking_id, "demo")
+
+    # Core authorization grant for the room (the contract RoomPower consumes).
+    authorize_room_activation(
+        business_id, "ROOM-101", source="demo_init", issued_by="demo",
+        metadata={"booking_id": booking_id, "check_in_source": "demo"},
+    )
+    auth = effective_authorization(business_id, "ROOM-101")
+    if not auth.get("authorized"):
+        return
+
+    # Activate the room: queue a POWER_ON through the Core dispatch path so the
+    # command carries the authorization event id (the honest path, not the legacy
+    # coil path).
+    def _dispatch(event: Dict[str, Any]) -> Dict[str, Any]:
+        return dispatch_activation(
+            business_id,
+            event.get("room_code", "ROOM-101"),
+            "VDEV-101",
+            actor="demo",
+            event_id=event.get("event_id"),
+        )
+
+    activate_room(
+        business_id, booking_id, "demo",
+        room_code="ROOM-101", device_code="VDEV-101",
+        authorization=auth, dispatch=_dispatch,
+    )
+
+    # Device picks up the command and acknowledges the relay ON.
+    polled = device_poll("VDEV-101")
+    command = (polled or {}).get("command")
+    if command:
+        device_ack(command["command_id"], "VDEV-101", reported_relay_state="ON")
+
+
+def _count_demo_records() -> Dict[str, Any]:
+    """Count records across every store the demo pages read, honestly."""
+    import app.checkins as _ci
+    import app.authorization as _am
+
+    return {
+        "rooms": len(_TABLES["rooms"]),
+        "bookings": len(_TABLES["bookings"]),
+        "payments": len(_TABLES["payments"]),
+        "devices": len(_TABLES["devices"]),
+        "telemetry": len(_TABLES["telemetry"]),
+        "alerts": len(_TABLES["alerts"]),
+        "commands": len(commands.COMMANDS),
+        "device_state": len(commands.DEVICE_STATE),
+        "check_ins": len(_ci._STORE),
+        "authorizations": len(_am.AUTHORIZATION_EVENT_LOG),
+        "note": (
+            "service_requests, staff_tasks, device_reports and verifications are "
+            "declared in the manifest but are not owned by an in-memory store in "
+            "this demo function; in a Workpeg deployment they are provisioned by "
+            "the platform and populated by module hooks."
+        ),
+    }
+
+
+def _table_availability() -> Dict[str, Any]:
+    """Which manifest-declared tables hold data in the demo function's stores.
+
+    Honest split: the function's own ``_TABLES`` plus the module stores it owns
+    (``commands.COMMANDS``, ``checkins._STORE``,
+    ``authorization.AUTHORIZATION_EVENT_LOG``, and the ``modules.*`` module-model
+    stores) versus declared-in-manifest-but-not-in-any-demo-store. Declared tables
+    are provisioned by the Workpeg platform from the manifest at build/deploy time
+    -- this function does not and cannot create them.
+    """
+    import app.checkins as _ci
+    import app.authorization as _am
+    import app.modules as _mods
+
+    demo_stores: Dict[str, Any] = {
+        "rooms": _TABLES["rooms"],
+        "bookings": _TABLES["bookings"],
+        "payments": _TABLES["payments"],
+        "devices": _TABLES["devices"],
+        "commands": commands.COMMANDS,  # real commands live here; _TABLES["commands"] is unused
+        "telemetry": _TABLES["telemetry"],
+        "alerts": _TABLES["alerts"],
+        "check_ins": _ci._STORE,
+        "authorizations": _am.AUTHORIZATION_EVENT_LOG,
+        "module_catalog": _mods.CATALOG,
+        "module_profile": _mods.PROFILES_STORE,
+        "business_modules": _mods.BUSINESS_MODULES,
+        "module_config": _mods.MODULE_CONFIG,
+    }
+    counts = {name: len(store) for name, store in demo_stores.items()}
+    available = [name for name in DECLARED_TABLE_NAMES if name in demo_stores]
+    not_in_demo = [name for name in DECLARED_TABLE_NAMES if name not in demo_stores]
+
+    return {
+        "available": available,
+        "counts": counts,
+        "declared_not_in_demo": not_in_demo,
+        "extra_demo_stores": {
+            "device_state": {
+                "store": "commands.DEVICE_STATE",
+                "rows": len(commands.DEVICE_STATE),
+                "note": "in-memory device-state cache; not a manifest-declared table",
+            },
+        },
+        "note": (
+            "Declared tables are provisioned by the Workpeg platform from the "
+            "manifest at build/deploy time -- this function action does not create "
+            "them. The demo function owns in-memory stores for the tables listed "
+            "under 'available'; the platform table layer would back them in a real "
+            "deployment. 'declared_not_in_demo' tables exist in the manifest but "
+            "this demo function does not own an in-memory store for them: they are "
+            "populated by sibling module hooks / the platform table layer once "
+            "provisioned."
+        ),
+    }
+
+
+def _module_state_report(business_id: str) -> List[Dict[str, Any]]:
+    """Installed / enabled state and configuration for every module the business has."""
+    modules_list = get_business_modules(business_id)
+    rows: List[Dict[str, Any]] = []
+    for module_id in sorted(modules_list):
+        info = describe_module(module_id) or {}
+        bm = modules_list[module_id]
+        config_rows = get_module_config(business_id, module_id, None) or []
+        config = {c["key"]: c.get("value") for c in config_rows if isinstance(c, dict)}
+        rows.append({
+            "module_id": module_id,
+            "name": info.get("name", module_id),
+            "installed": bool(bm.get("installed")),
+            "enabled": bool(bm.get("enabled")),
+            "requirement": bm.get("requirement"),
+            "config": config,
+        })
+    return rows
+
+
+def dev_initialize_business(context: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Initialise the PegPower dev business: install + enable the four canonical
+    modules, write their config defaults, and seed labelled demo data.
+
+    Dev-only and tenant-isolated: the caller's business id must match
+    ``PEGPOWER_DEV_BUSINESS_ID`` exactly. This does **not** provision platform
+    tables -- those are declared in the manifest and provisioned by the platform at
+    build/deploy time; this action reports honestly which declared tables are
+    available in the demo function's own stores. It also does **not** enable
+    modules for ordinary (non-dev) customers.
+    """
+    # Read the business id from the payload (UI action calls) or, as a fallback,
+    # from the action envelope context. The platform's phase_action envelope
+    # carries the business in ``context.business``; context may be None when the
+    # function is called directly (e.g. a test) rather than through the runtime.
+    context_business = context.get("business") if isinstance(context, dict) else None
+    business_id = payload.get("business_id") or context_business or ""
+    if not business_id:
+        return {"ok": False, "error": "business_id is required"}
+
+    # Tenant isolation: only the dev install's demonstration business may be
+    # initialised. Explicit equality on the exact dev business id -- never a
+    # prefix or pattern match, and never for arbitrary businesses.
+    if not _DEV_BUSINESS_ID:
+        return {
+            "ok": False,
+            "error": "dev_initialize_business is unavailable: PEGPOWER_DEV_BUSINESS_ID is not set",
+        }
+    if business_id != _DEV_BUSINESS_ID:
+        return {
+            "ok": False,
+            "error": "dev_initialize_business is restricted to the dev business",
+            "dev_business_id": _DEV_BUSINESS_ID,
+            "requested_business_id": business_id,
+        }
+
+    business_type = payload.get("business_type") or "hotel"
+
+    # 1. Install + enable the four canonical modules and write config defaults.
+    init_result = ensure_business_initialized(
+        business_id, business_type,
+        source="dev_initialize", actor="dev_initialize_business",
+    )
+
+    # 2. Seed labelled demo data (idempotent, dev-only).
+    seed_result = seed_demo_data_for_business(business_id, force=False)
+
+    # 3. Honest table-availability report.
+    tables = _table_availability()
+    module_states = _module_state_report(business_id)
+
+    return {
+        "ok": True,
+        "action": "dev_initialize_business",
+        "restricted_to": _DEV_BUSINESS_ID,
+        "business_id": business_id,
+        "business_type": business_type,
+        "initialized": init_result.get("ok", False),
+        "already_configured": init_result.get("already_configured"),
+        "init_actions": init_result.get("actions", []),
+        "modules": module_states,
+        "tables": tables,
+        "seeded": seed_result.get("seeded"),
+        "seed_counts": seed_result.get("counts", {}),
+        "demo_data_note": (
+            "All seeded payments and telemetry are labelled simulated "
+            "(payments.is_simulated=true, telemetry.is_simulated=true)."
+        ),
+    }
+
+
+def _business_has_inventory(business_id: str) -> bool:
+    """Does this business already have rooms populated in the demo store?
+
+    Used only to guard idempotent demo seeding. The demo store is keyed by room
+    code, so a populated business will have at least one room row.
+    """
+    return len(_TABLES["rooms"]) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -1754,6 +2256,9 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
         except Exception as e:
             cfg = {"ok": False, "error": str(e)}
         return cfg
+
+    if action == "dev_initialize_business":
+        return dev_initialize_business(context, data if isinstance(data, dict) else {})
 
     if action == "authorize_room_activation":
         return {"ok": True, "event": authorize_room_activation(

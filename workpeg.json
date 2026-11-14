@@ -1,11 +1,11 @@
 {
   "name": "QuickPass Workpeg",
   "namespace": "pegpower",
+  "sdk": "0.163.0",
   "version": "1.0.2",
-  "description": "PegPower is the hospitality operating platform: PegPower Core plus installable business modules (Pegs). This peg is the first coherent PegPower Peg, containing internally organized modules \u2014 Bookings & Inventory, QuickPass (guest identity and check-in), RoomPower (room controllers, electricity monitoring, commands, telemetry, energy alerts), Guest Hub, Deals, Property Ops \u2014 with per-business module activation and configuration. The peg is internal and Python-only; any customer-facing hospitality marketplace surface lives on the operator's own server/site, not on the peg.",
+  "description": "PegPower is the hospitality operating platform: PegPower Core plus installable business modules (Pegs). This peg is the first coherent PegPower Peg, containing internally organized modules — Bookings & Inventory, QuickPass (guest identity and check-in), RoomPower (room controllers, electricity monitoring, commands, telemetry, energy alerts), Guest Hub, Deals, Property Ops — with per-business module activation and configuration. The peg is internal and Python-only; any customer-facing hospitality marketplace surface lives on the operator's own server/site, not on the peg.",
   "author": "PegPower Hackathon Team",
   "scopes": [
-    "inbound"
   ],
   "dev": {
     "others": "deny"
