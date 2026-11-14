@@ -410,6 +410,37 @@ def test_route_guard() -> None:
               for m in call("module_surface", business_id="biz-r")["surface"]["modules"]))
 
 
+def test_hook_dispatch_by_table() -> None:
+    print("\n[hooks route on the context's table]")
+    # The platform's hook envelope carries the row's data keyed by column
+    # id and names the saved table in the context — not in the payload.
+    columns = [
+        {"id": "col-status", "name": "status"},
+        {"id": "col-session", "name": "session_id"},
+        {"id": "col-provider", "name": "provider"},
+    ]
+    context = {"table": {"name": "verifications", "columns": columns}}
+    result = main(context, {"col-status": "verified",
+                            "col-session": "demo-1",
+                            "col-provider": "demo"})
+    check("context table routes to the verification hook",
+          result.get("ok") is True and result.get("status") == "verified")
+
+    refused = main(context, {"col-status": "verified", "col-session": ""})
+    check("hook refusals survive the id-to-name rename",
+          refused.get("ok") is False and refused.get("refused") is True)
+
+    ignored = main({"table": {"name": "no_such_table"}}, {"anything": 1})
+    check("an unhooked table falls through to the action dispatcher",
+          ignored.get("ok") is False and "no action supplied"
+          in ignored.get("error", ""))
+
+    # A payload that already names its keys (custom string column ids)
+    # passes through the rename unchanged.
+    named = main(context, {"status": "pending", "session_id": ""})
+    check("already-named keys are kept", named.get("ok") is True)
+
+
 def test_unknown_action() -> None:
     print("\n[dispatch hygiene]")
     result = call("no_such_action")
@@ -426,6 +457,7 @@ def run() -> int:
         test_checkout_policy,
         test_vertical_slice,
         test_route_guard,
+        test_hook_dispatch_by_table,
         test_unknown_action,
     ]
     for test in tests:

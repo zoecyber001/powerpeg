@@ -15,8 +15,8 @@ so it does not offer controls that could not work.
 """
 from workpeg.ui import (
     App, State, Padding, Column, Row, Text, Button, Table, TableHeader,
-    TableCell, TableRow, Tag, Link, biz_url, navigate, set_title, store,
-    workpeg,
+    TableCell, TableRow, Tag, Link, Container, Icon, Spacer, dates,
+    biz_url, navigate, set_title, store, workpeg, toast,
 )
 
 from components import EmptyState, ErrorState, LoadingState, PageHeader
@@ -28,6 +28,9 @@ class RoomPowerPage(App):
     loading = State(True)
     error = State("")
     enabled = State(True)
+    busy = State(False)
+    seed_error = State("")
+    seed_note = State("")
     devices = State([])
     command_rows = State([])
     device_count = State(0)
@@ -99,6 +102,57 @@ class RoomPowerPage(App):
                 return candidate
         return None
 
+    def now_iso(self):
+        return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
+
+    # ── demo seed ────────────────────────────────────────────────────────
+
+    async def register_demo_controller(self):
+        """Register one demo AZ3166 controller so the twin console has a
+        device to talk to. This page and the twin console both say the
+        twin is not physical hardware, wherever it could be mistaken."""
+        self.busy = True
+        self.seed_error = ""
+        self.seed_note = ""
+        try:
+            table = await self.table("devices")
+            if table is None:
+                self.seed_error = "This business has no devices table."
+                self.busy = False
+                return
+            existing = await workpeg.get_rows(table["uuid"], limit=200)
+            if len(existing) > 0:
+                self.seed_error = "A controller is already registered."
+                self.busy = False
+                return
+            room_code = ""
+            rooms = await self.table("rooms")
+            if rooms is not None:
+                for row in await workpeg.get_rows(rooms["uuid"], limit=50):
+                    candidate = (row.get("data") or {}).get("room_code") or ""
+                    if room_code == "" and candidate:
+                        room_code = candidate
+            code = "AZ-" + (room_code or "3166")
+            stamp = self.now_iso()
+            await workpeg.add_row(table["uuid"], {
+                "device_code": code,
+                "room_code": room_code,
+                "device_type": "AZ3166 (demo twin)",
+                "connection_status": "online",
+                "reported_relay_state": "OFF",
+                "last_seen_at": stamp,
+                "firmware": "demo-twin",
+            })
+            self.seed_note = ("Registered " + code + " as the demo twin"
+                              " for room " + (room_code or "—")
+                              + ". It is not physical hardware; the twin"
+                              " console says so too.")
+            toast("Demo controller registered")
+            await self.load()
+        except Exception as e:
+            self.seed_error = e.message
+        self.busy = False
+
     async def module_on(self):
         """Read the business's module rows; no rows means unconfigured."""
         table = await self.table("business_modules")
@@ -169,21 +223,52 @@ class RoomPowerPage(App):
                        icon="home", on_click=self.open_overview),
             )
         elif self.device_count == 0:
-            return EmptyState(
-                "bolt",
-                "No devices yet",
-                "This business has no controllers registered, so there is"
-                " nothing to power on or off.",
-                Button("Check again", variant="outline-gray", icon="refresh",
-                       on_click=self.retry),
+            return Column(
+                EmptyState(
+                    "bolt",
+                    "No devices yet",
+                    "This business has no controllers registered, so there is"
+                    " nothing to power on or off.",
+                    Column(
+                        Button("Register the demo AZ3166 controller",
+                               variant="outline-gray", icon="cpu",
+                               on_click=self.register_demo_controller),
+                        Text("Writes one devices row labelled as a demo"
+                             " twin, so the twin console has something to"
+                             " command and report.", variant="caption"),
+                        gap=8, align="center",
+                    ),
+                ),
+                self.seed_messages(),
+                gap=12, align="stretch",
             )
         else:
             return Column(
+                self.seed_messages(),
                 self.devices_table(),
                 self.commands_table(),
                 gap=24,
                 align="stretch",
             )
+
+    def seed_messages(self):
+        """The demo-seed result, shown until the next reload clears it."""
+        if self.seed_error != "":
+            return Container(
+                Row(Icon("alert-triangle", size=16),
+                    Text(self.seed_error, variant="muted"),
+                    gap=10, align="start"),
+                variant="card", padding=14,
+            )
+        elif self.seed_note != "":
+            return Container(
+                Row(Icon("check-circle", size=16),
+                    Text(self.seed_note, variant="muted"),
+                    gap=10, align="start"),
+                variant="card", padding=14,
+            )
+        else:
+            return Spacer()
 
     def devices_table(self):
         return Column(

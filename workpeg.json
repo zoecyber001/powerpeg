@@ -127,7 +127,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_booking_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -166,7 +166,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_payment_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -208,7 +208,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_device_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -277,7 +277,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_command_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -318,7 +318,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_device_report_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       }
     },
     {
@@ -357,7 +357,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_telemetry_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -498,7 +498,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_authorization_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -568,7 +568,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_verification_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },
@@ -622,7 +622,7 @@
         }
       ],
       "hooks": {
-        "post_save": "pegpower.on_service_request_post_save"
+        "post_save": "custom.pegpower:1.0.2"
       },
       "permission": "740"
     },

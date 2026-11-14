@@ -91,6 +91,19 @@ the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
 
 ## In progress / next
 
+0. **Demo-path fixes (2026-11-14).** Two gaps from the docs audit are closed:
+   the front desk gained **Record demo identity check** (writes a
+   `verifications` row with provider `demo` and a demo session id — the desk,
+   QuickPass and the guest hub all name the provider; the approval stays a
+   separate human act), and RoomPower gained **Register the demo AZ3166
+   controller** (one `devices` row labelled demo twin). The save-hook wiring
+   now matches the documented platform contract: manifest slugs are
+   `custom.pegpower:1.0.2` (the grammar's exactly-one-colon function-hook
+   shape) and `main()` routes on `context["table"]["name"]`, renaming
+   column-id payload keys to column names. Tests: **89 passed** (new:
+   `test_hook_dispatch_by_table`). Still unverified: a live save on the dev
+   server firing the hook end to end.
+
 1. Nothing half-written is left in the UI: all of `front_desk`,
    `roompower_device`, `quickpass` and `guest_hub` compile and are wired to the
    real tables. Next is the written deliverable report, then the remaining gaps

@@ -1787,6 +1787,49 @@ def get_status(payload: Optional[Dict[str, Any]] = None, *, seed: bool = False) 
 # Entrypoint
 # ---------------------------------------------------------------------------
 
+#: A save hook's payload is the saved row's data. The platform allows one
+#: hook slug per phase per table, so every hooked table names the same
+#: function hook (`custom.pegpower:<version>`) and this map routes on the
+#: table that was saved. Keys are the manifest's table names.
+POST_SAVE_BY_TABLE = {
+    "bookings": on_booking_post_save,
+    "payments": on_payment_post_save,
+    "devices": roompower.on_device_post_save,
+    "commands": roompower.on_command_post_save,
+    "device_reports": roompower.on_device_report_post_save,
+    "telemetry": on_telemetry_post_save,
+    "verifications": quickpass.on_verification_post_save,
+    "authorizations": guestops.on_authorization_post_save,
+    "service_requests": guestops.on_service_request_post_save,
+}
+
+
+def _hook_row_data(data: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Rename a hook payload's column-id keys to column names.
+
+    The platform sends a hook's payload keyed by the table's column ids;
+    the manifest and every handler read column names. The context names
+    the saved table, whose columns carry both, so map id -> name and keep
+    any key the table does not name. Every hook here is post-save, whose
+    response is discarded, so renamed keys never rewrite a row.
+    """
+    table = context.get("table") if isinstance(context, dict) else None
+    columns = table.get("columns") if isinstance(table, dict) else None
+    if not isinstance(columns, list):
+        return data
+    ids = {}
+    for column in columns:
+        if (isinstance(column, dict) and column.get("id")
+                and column.get("name")):
+            ids[str(column["id"])] = str(column["name"])
+    if not ids:
+        return data
+    out: Dict[str, Any] = {}
+    for key, value in (data or {}).items():
+        out[ids.get(str(key), key)] = value
+    return out
+
+
 def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
     """Workpeg function entrypoint: app.main:main.
 
@@ -1823,6 +1866,22 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
         return guestops.on_authorization_post_save(data)
     if hook == "pegpower.on_service_request_post_save" or action == "on_service_request_post_save":
         return guestops.on_service_request_post_save(data)
+
+    # A platform save hook posts the row's data with no marker in the
+    # payload — the `hook` field above is this repo's older local shape.
+    # The documented contract names the saved table in the context, so
+    # route on that. An action or a legacy hook name always wins.
+    if not action and not hook:
+        table_info = context.get("table") if isinstance(context, dict) else None
+        table_name = ""
+        if isinstance(table_info, dict):
+            table_name = str(table_info.get("name") or "")
+        elif isinstance(table_info, str):
+            table_name = table_info
+        handler = POST_SAVE_BY_TABLE.get(table_name)
+        if handler is not None:
+            row = data if isinstance(data, dict) else {}
+            return handler(_hook_row_data(row, context))
 
     # ---- RoomPower: the AZ3166 twin ----
     if action == "twin_ack":

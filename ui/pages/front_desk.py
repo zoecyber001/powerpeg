@@ -411,6 +411,69 @@ class FrontDeskPage(App):
             self.action_error = e.message
         self.busy = False
 
+    async def record_demo_verification(self, booking_id):
+        """Record a clearly-labelled demo identity check for this arrival.
+
+        The function holds the real provider (Didit) and the browser cannot
+        call it, so a demo desk check is written straight into
+        `verifications` with provider "demo". The label travels with the
+        row: the desk, QuickPass and the guest hub all name the provider.
+        The approval stays a separate human act.
+        """
+        self.busy = True
+        self.action_error = ""
+        self.action_note = ""
+        try:
+            target = None
+            for line in self.arrivals:
+                if line["booking_id"] == booking_id:
+                    target = line
+            if target is None or target["state"] != "Arriving":
+                self.action_error = "That reservation is no longer arriving."
+                self.busy = False
+                return
+            if target["payment"] != "confirmed":
+                self.action_error = ("The payment is not confirmed yet, so"
+                                     " there is nothing to verify against.")
+                self.busy = False
+                return
+            if target["verification"] != "not started":
+                self.action_error = ("An identity check is already recorded"
+                                     " for this arrival.")
+                self.busy = False
+                return
+            table = await self.table("verifications")
+            if table is None:
+                self.action_error = "This business has no verifications table."
+                self.busy = False
+                return
+            stamp = self.now_iso()
+            await workpeg.add_row(table["uuid"], {
+                "verification_id": "VER-" + booking_id + "-demo",
+                "booking_id": booking_id,
+                "guest_label": target["guest"],
+                "room_code": target["room_code"],
+                "provider": "demo",
+                "session_id": "demo-" + booking_id,
+                "verification_url": "",
+                "provider_status": "verified",
+                "status": "verified",
+                "decision": "Recorded at the desk as a demo identity check.",
+                "reviewed_by": "front desk (demo)",
+                "created_at": stamp,
+                "updated_at": stamp,
+                "last_event_id": "",
+            })
+            self.action_note = ("Demo identity check recorded for "
+                                + target["guest"] + " — it is labelled demo"
+                                " on every screen. The approval is still"
+                                " yours to click.")
+            toast("Demo identity check recorded")
+            await self.reload()
+        except Exception as e:
+            self.action_error = e.message
+        self.busy = False
+
     async def queue(self, device_code, room_code, command, event_id, stamp):
         """Append one PENDING command; the relay moves only on a report."""
         table = await self.table("commands")
@@ -616,6 +679,20 @@ class FrontDeskPage(App):
                 gap=10, align="center",
             )
         else:
+            if (line["state"] == "Arriving"
+                    and line["payment"] == "confirmed"
+                    and line["verification"] == "not started"):
+                return Row(
+                    Button("Record demo identity check",
+                           variant="outline-gray", icon="shield-check",
+                           on_click=lambda: self.record_demo_verification(
+                               line["booking_id"])),
+                    Text("writes a verifications row labelled demo; the"
+                         " real provider runs through the function, and"
+                         " the approval stays separate",
+                         variant="caption"),
+                    align="center", gap=10,
+                )
             return Row(
                 Text("No action available from this desk state.",
                      variant="caption"),
