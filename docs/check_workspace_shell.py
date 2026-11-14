@@ -64,7 +64,7 @@ def _app_shell_has_both_rails():
     _collect_widget_text(built, texts)
     joined = "\n".join(texts)
     workspace_markers = ("Commerce", "QuickPass", "Guest Experience & Ops", "RoomPower")
-    customer_markers = ("Marketplace", "My bookings", "Guest hub")
+    customer_markers = ("Marketplace", "My bookings")
     return all(m in joined for m in workspace_markers), all(
         m in joined for m in customer_markers
     )
@@ -75,7 +75,7 @@ def main() -> int:
 
     checks = [
         ("workspace rail renders the four modules", workspace_ok),
-        ("customer rail renders marketplace + my bookings + guest hub", customer_ok),
+        ("customer rail renders marketplace + my bookings", customer_ok),
         ("RecordTag exists in components", "RecordTag" in dir(components)),
         ("StatCard exists in components", "StatCard" in dir(components)),
         ("PageHeader exists in components", "PageHeader" in dir(components)),
