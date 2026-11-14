@@ -118,26 +118,36 @@ class RolesPage(App):
         ]
 
     async def table(self, name):
-        """This business's table with that name, created if absent."""
+        """This business's table with that name, created if absent.
+
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["staff_members"] = [
-            {"name": "staff_member_id", "type": "string", "required": True},
-            {"name": "name", "type": "string", "required": True},
-            {"name": "email", "type": "string"},
-            {"name": "role", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "staff_member_id", "name": "staff_member_id", "type": "text", "position": 1000, "required": True},
+            {"id": "name", "name": "name", "type": "text", "position": 2000, "required": True},
+            {"id": "email", "name": "email", "type": "text", "position": 3000},
+            {"id": "role", "name": "role", "type": "text", "position": 4000},
+            {"id": "status", "name": "status", "type": "text", "position": 5000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 6000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 7000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
 
     def now_iso(self):
         return str(dates.now("Africa/Lagos", True) or "") + "+01:00"
@@ -173,13 +183,16 @@ class RolesPage(App):
                 self.busy = False
                 return
             await workpeg.add_row(table["uuid"], {
-                "staff_member_id": "STAFF-DEMO-me",
-                "name": name,
-                "email": email,
-                "role": "owner",
-                "status": "active",
-                "created_at": self.now_iso(),
-                "updated_at": self.now_iso(),
+                "data": {
+                    "staff_member_id": "STAFF-DEMO-me",
+                    "name": name,
+                    "email": email,
+                    "role": "owner",
+                    "status": "active",
+                    "created_at": self.now_iso(),
+                    "updated_at": self.now_iso(),
+                },
+                "position": dates.to_epoch(self.now_iso()),
             })
             self.action_note = (name + " is on the staff list as Owner, by"
                                 " a demo row — the row is labelled demo in"
@@ -214,13 +227,16 @@ class RolesPage(App):
                 return
             marker = ("STAFF-" + name.lower().strip())[0:40]
             await workpeg.add_row(table["uuid"], {
-                "staff_member_id": marker,
-                "name": name,
-                "email": email,
-                "role": role,
-                "status": "active",
-                "created_at": self.now_iso(),
-                "updated_at": self.now_iso(),
+                "data": {
+                    "staff_member_id": marker,
+                    "name": name,
+                    "email": email,
+                    "role": role,
+                    "status": "active",
+                    "created_at": self.now_iso(),
+                    "updated_at": self.now_iso(),
+                },
+                "position": dates.to_epoch(self.now_iso()),
             })
             self.action_note = (name + " is on the staff list as " + role
                                 + ".")

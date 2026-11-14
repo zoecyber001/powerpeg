@@ -65,79 +65,85 @@ class RoomPowerDevicePage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["authorizations"] = [
-            {"name": "event_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "authorization_type", "type": "string"},
-            {"name": "status", "type": "string", "required": True},
-            {"name": "source", "type": "string"},
-            {"name": "issued_by", "type": "string"},
-            {"name": "issued_at", "type": "datetime"},
-            {"name": "expires_at", "type": "datetime"},
-            {"name": "metadata", "type": "json"},
+            {"id": "event_id", "name": "event_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000, "required": True},
+            {"id": "authorization_type", "name": "authorization_type", "type": "text", "position": 4000},
+            {"id": "status", "name": "status", "type": "text", "position": 5000, "required": True},
+            {"id": "source", "name": "source", "type": "text", "position": 6000},
+            {"id": "issued_by", "name": "issued_by", "type": "text", "position": 7000},
+            {"id": "issued_at", "name": "issued_at", "type": "datetime", "position": 8000},
+            {"id": "expires_at", "name": "expires_at", "type": "datetime", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
         defs["commands"] = [
-            {"name": "command_id", "type": "string", "required": True},
-            {"name": "device_code", "type": "string", "required": True},
-            {"name": "command", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_code", "type": "string"},
-            {"name": "issued_at", "type": "datetime"},
-            {"name": "sent_at", "type": "datetime"},
-            {"name": "expires_at", "type": "datetime"},
-            {"name": "acknowledged_at", "type": "datetime"},
-            {"name": "authorization_event_id", "type": "string"},
-            {"name": "idempotency_key", "type": "string"},
-            {"name": "failure_reason", "type": "string"},
-            {"name": "device_reported_state", "type": "json"},
+            {"id": "command_id", "name": "command_id", "type": "text", "position": 1000, "required": True},
+            {"id": "device_code", "name": "device_code", "type": "text", "position": 2000, "required": True},
+            {"id": "command", "name": "command", "type": "text", "position": 3000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 4000},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 5000},
+            {"id": "issued_at", "name": "issued_at", "type": "datetime", "position": 6000},
+            {"id": "sent_at", "name": "sent_at", "type": "datetime", "position": 7000},
+            {"id": "expires_at", "name": "expires_at", "type": "datetime", "position": 8000},
+            {"id": "acknowledged_at", "name": "acknowledged_at", "type": "datetime", "position": 9000},
+            {"id": "authorization_event_id", "name": "authorization_event_id", "type": "text", "position": 10000},
+            {"id": "idempotency_key", "name": "idempotency_key", "type": "text", "position": 11000},
+            {"id": "failure_reason", "name": "failure_reason", "type": "text", "position": 12000},
+            {"id": "device_reported_state", "name": "device_reported_state", "type": "text", "position": 13000},
         ]
         defs["device_reports"] = [
-            {"name": "report_id", "type": "text"},
-            {"name": "device_code", "type": "text"},
-            {"name": "room_code", "type": "text"},
-            {"name": "command_id", "type": "text"},
-            {"name": "relay_state", "type": "text"},
-            {"name": "source", "type": "text"},
-            {"name": "reported_at", "type": "text"},
-            {"name": "note", "type": "text"},
+            {"id": "report_id", "name": "report_id", "type": "text", "position": 1000},
+            {"id": "device_code", "name": "device_code", "type": "text", "position": 2000},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000},
+            {"id": "command_id", "name": "command_id", "type": "text", "position": 4000},
+            {"id": "relay_state", "name": "relay_state", "type": "text", "position": 5000},
+            {"id": "source", "name": "source", "type": "text", "position": 6000},
+            {"id": "reported_at", "name": "reported_at", "type": "text", "position": 7000},
+            {"id": "note", "name": "note", "type": "text", "position": 8000},
         ]
         defs["devices"] = [
-            {"name": "device_code", "type": "string", "required": True},
-            {"name": "room_code", "type": "string"},
-            {"name": "device_type", "type": "string"},
-            {"name": "connection_status", "type": "string"},
-            {"name": "reported_relay_state", "type": "string"},
-            {"name": "last_seen_at", "type": "datetime"},
-            {"name": "firmware", "type": "string"},
+            {"id": "device_code", "name": "device_code", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000},
+            {"id": "device_type", "name": "device_type", "type": "text", "position": 3000},
+            {"id": "connection_status", "name": "connection_status", "type": "text", "position": 4000},
+            {"id": "reported_relay_state", "name": "reported_relay_state", "type": "text", "position": 5000},
+            {"id": "last_seen_at", "name": "last_seen_at", "type": "datetime", "position": 6000},
+            {"id": "firmware", "name": "firmware", "type": "text", "position": 7000},
         ]
         defs["rooms"] = [
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "display_name", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_type", "type": "string"},
-            {"name": "rate", "type": "number"},
-            {"name": "area", "type": "string"},
-            {"name": "star_rating", "type": "number"},
-            {"name": "pitch", "type": "string"},
-            {"name": "assigned_device_id", "type": "string"},
-            {"name": "authorised", "type": "boolean"},
-            {"name": "authorised_reason", "type": "string"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 1000, "required": True},
+            {"id": "display_name", "name": "display_name", "type": "text", "position": 2000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 3000},
+            {"id": "room_type", "name": "room_type", "type": "text", "position": 4000},
+            {"id": "rate", "name": "rate", "type": "number", "position": 5000},
+            {"id": "area", "name": "area", "type": "text", "position": 6000},
+            {"id": "star_rating", "name": "star_rating", "type": "number", "position": 7000},
+            {"id": "pitch", "name": "pitch", "type": "text", "position": 8000},
+            {"id": "assigned_device_id", "name": "assigned_device_id", "type": "text", "position": 9000},
+            {"id": "authorised", "name": "authorised", "type": "boolean", "position": 10000},
+            {"id": "authorised_reason", "name": "authorised_reason", "type": "text", "position": 11000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 12000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""
@@ -379,7 +385,10 @@ class RoomPowerDevicePage(App):
                 "failure_reason": "",
                 "device_reported_state": "",
             }
-            await workpeg.add_row(table["uuid"], row)
+            await workpeg.add_row(table["uuid"], {
+                "data": row,
+                "position": dates.to_epoch(stamp),
+            })
             self.action_note = ("Queued " + command + " as " + code
                                 + ". The room stays as it is until the twin"
                                 " reports back.")
@@ -424,7 +433,10 @@ class RoomPowerDevicePage(App):
                 "reported_at": stamp,
                 "note": note,
             }
-            await workpeg.add_row(table["uuid"], row)
+            await workpeg.add_row(table["uuid"], {
+                "data": row,
+                "position": dates.to_epoch(stamp),
+            })
             self.action_note = "The twin reported relay " + relay + "."
             toast("Twin reported " + relay)
             await self.reload()

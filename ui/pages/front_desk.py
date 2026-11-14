@@ -55,121 +55,126 @@ class FrontDeskPage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects. Column ids
+        are the manifest's column names, so every row write and read
+        keeps its keys."""
         defs = {}
-        defs["staff_members"] = [
-            {"name": "staff_member_id", "type": "string", "required": True},
-            {"name": "name", "type": "string", "required": True},
-            {"name": "email", "type": "string"},
-            {"name": "role", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
-            {"name": "updated_at", "type": "datetime"},
-        ]
         defs["authorizations"] = [
-            {"name": "event_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "authorization_type", "type": "string"},
-            {"name": "status", "type": "string", "required": True},
-            {"name": "source", "type": "string"},
-            {"name": "issued_by", "type": "string"},
-            {"name": "issued_at", "type": "datetime"},
-            {"name": "expires_at", "type": "datetime"},
-            {"name": "metadata", "type": "json"},
+            {"id": "event_id", "name": "event_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000, "required": True},
+            {"id": "authorization_type", "name": "authorization_type", "type": "text", "position": 4000},
+            {"id": "status", "name": "status", "type": "text", "position": 5000, "required": True},
+            {"id": "source", "name": "source", "type": "text", "position": 6000},
+            {"id": "issued_by", "name": "issued_by", "type": "text", "position": 7000},
+            {"id": "issued_at", "name": "issued_at", "type": "datetime", "position": 8000},
+            {"id": "expires_at", "name": "expires_at", "type": "datetime", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
         defs["bookings"] = [
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "start_at", "type": "datetime", "required": True},
-            {"name": "end_at", "type": "datetime", "required": True},
-            {"name": "booking_status", "type": "string"},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000, "required": True},
+            {"id": "start_at", "name": "start_at", "type": "datetime", "position": 4000, "required": True},
+            {"id": "end_at", "name": "end_at", "type": "datetime", "position": 5000, "required": True},
+            {"id": "booking_status", "name": "booking_status", "type": "text", "position": 6000},
         ]
         defs["check_ins"] = [
-            {"name": "check_in_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "arrived_at", "type": "datetime"},
-            {"name": "verified_at", "type": "datetime"},
-            {"name": "approved_at", "type": "datetime"},
-            {"name": "activated_at", "type": "datetime"},
-            {"name": "check_in_status", "type": "string"},
+            {"id": "check_in_id", "name": "check_in_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 4000, "required": True},
+            {"id": "arrived_at", "name": "arrived_at", "type": "datetime", "position": 5000},
+            {"id": "verified_at", "name": "verified_at", "type": "datetime", "position": 6000},
+            {"id": "approved_at", "name": "approved_at", "type": "datetime", "position": 7000},
+            {"id": "activated_at", "name": "activated_at", "type": "datetime", "position": 8000},
+            {"id": "check_in_status", "name": "check_in_status", "type": "text", "position": 9000},
         ]
         defs["commands"] = [
-            {"name": "command_id", "type": "string", "required": True},
-            {"name": "device_code", "type": "string", "required": True},
-            {"name": "command", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_code", "type": "string"},
-            {"name": "issued_at", "type": "datetime"},
-            {"name": "sent_at", "type": "datetime"},
-            {"name": "expires_at", "type": "datetime"},
-            {"name": "acknowledged_at", "type": "datetime"},
-            {"name": "authorization_event_id", "type": "string"},
-            {"name": "idempotency_key", "type": "string"},
-            {"name": "failure_reason", "type": "string"},
-            {"name": "device_reported_state", "type": "json"},
+            {"id": "command_id", "name": "command_id", "type": "text", "position": 1000, "required": True},
+            {"id": "device_code", "name": "device_code", "type": "text", "position": 2000, "required": True},
+            {"id": "command", "name": "command", "type": "text", "position": 3000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 4000},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 5000},
+            {"id": "issued_at", "name": "issued_at", "type": "datetime", "position": 6000},
+            {"id": "sent_at", "name": "sent_at", "type": "datetime", "position": 7000},
+            {"id": "expires_at", "name": "expires_at", "type": "datetime", "position": 8000},
+            {"id": "acknowledged_at", "name": "acknowledged_at", "type": "datetime", "position": 9000},
+            {"id": "authorization_event_id", "name": "authorization_event_id", "type": "text", "position": 10000},
+            {"id": "idempotency_key", "name": "idempotency_key", "type": "text", "position": 11000},
+            {"id": "failure_reason", "name": "failure_reason", "type": "text", "position": 12000},
+            {"id": "device_reported_state", "name": "device_reported_state", "type": "text", "position": 13000},
         ]
         defs["devices"] = [
-            {"name": "device_code", "type": "string", "required": True},
-            {"name": "room_code", "type": "string"},
-            {"name": "device_type", "type": "string"},
-            {"name": "connection_status", "type": "string"},
-            {"name": "reported_relay_state", "type": "string"},
-            {"name": "last_seen_at", "type": "datetime"},
-            {"name": "firmware", "type": "string"},
+            {"id": "device_code", "name": "device_code", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000},
+            {"id": "device_type", "name": "device_type", "type": "text", "position": 3000},
+            {"id": "connection_status", "name": "connection_status", "type": "text", "position": 4000},
+            {"id": "reported_relay_state", "name": "reported_relay_state", "type": "text", "position": 5000},
+            {"id": "last_seen_at", "name": "last_seen_at", "type": "datetime", "position": 6000},
+            {"id": "firmware", "name": "firmware", "type": "text", "position": 7000},
         ]
         defs["service_requests"] = [
-            {"name": "request_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string"},
-            {"name": "guest_label", "type": "string"},
-            {"name": "category", "type": "string", "required": True},
-            {"name": "detail", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "assigned_to", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "request_id", "name": "request_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 4000},
+            {"id": "category", "name": "category", "type": "text", "position": 5000, "required": True},
+            {"id": "detail", "name": "detail", "type": "text", "position": 6000},
+            {"id": "status", "name": "status", "type": "text", "position": 7000},
+            {"id": "assigned_to", "name": "assigned_to", "type": "text", "position": 8000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 9000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 10000},
         ]
         defs["staff_tasks"] = [
-            {"name": "task_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string"},
-            {"name": "kind", "type": "string", "required": True},
-            {"name": "room_code", "type": "string"},
-            {"name": "detail", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "assigned_to", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
+            {"id": "task_id", "name": "task_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000},
+            {"id": "kind", "name": "kind", "type": "text", "position": 3000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 4000},
+            {"id": "detail", "name": "detail", "type": "text", "position": 5000},
+            {"id": "status", "name": "status", "type": "text", "position": 6000},
+            {"id": "assigned_to", "name": "assigned_to", "type": "text", "position": 7000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 8000},
         ]
         defs["verifications"] = [
-            {"name": "verification_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string"},
-            {"name": "room_code", "type": "string"},
-            {"name": "provider", "type": "string"},
-            {"name": "session_id", "type": "string"},
-            {"name": "verification_url", "type": "string"},
-            {"name": "provider_status", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "decision", "type": "string"},
-            {"name": "reviewed_by", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
-            {"name": "updated_at", "type": "datetime"},
-            {"name": "last_event_id", "type": "string"},
+            {"id": "verification_id", "name": "verification_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 4000},
+            {"id": "provider", "name": "provider", "type": "text", "position": 5000},
+            {"id": "session_id", "name": "session_id", "type": "text", "position": 6000},
+            {"id": "verification_url", "name": "verification_url", "type": "text", "position": 7000},
+            {"id": "provider_status", "name": "provider_status", "type": "text", "position": 8000},
+            {"id": "status", "name": "status", "type": "text", "position": 9000},
+            {"id": "decision", "name": "decision", "type": "text", "position": 10000},
+            {"id": "reviewed_by", "name": "reviewed_by", "type": "text", "position": 11000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 12000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 13000},
+            {"id": "last_event_id", "name": "last_event_id", "type": "text", "position": 14000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        defs["staff_members"] = [
+            {"id": "staff_member_id", "name": "staff_member_id", "type": "text", "position": 1000, "required": True},
+            {"id": "name", "name": "name", "type": "text", "position": 2000, "required": True},
+            {"id": "email", "name": "email", "type": "text", "position": 3000},
+            {"id": "role", "name": "role", "type": "text", "position": 4000},
+            {"id": "status", "name": "status", "type": "text", "position": 5000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 6000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 7000},
+        ]
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""
@@ -435,33 +440,39 @@ class FrontDeskPage(App):
             auth = await self.table("authorizations")
             if auth is not None:
                 await workpeg.add_row(auth["uuid"], {
-                    "event_id": "AUTH-" + booking_id + "-grant",
-                    "business_id": route.business_id,
-                    "room_code": target["room_code"],
-                    "authorization_type": "room_activation",
-                    "status": "granted",
-                    "source": "front_desk",
-                    "issued_by": "reception",
-                    "issued_at": stamp,
-                    "expires_at": expiry,
-                    "metadata": {
-                        "booking_id": booking_id,
-                        "guest_label": target["guest"],
-                        "review_overridden": target["review"],
+                    "data": {
+                        "event_id": "AUTH-" + booking_id + "-grant",
+                        "business_id": route.business_id,
+                        "room_code": target["room_code"],
+                        "authorization_type": "room_activation",
+                        "status": "granted",
+                        "source": "front_desk",
+                        "issued_by": "reception",
+                        "issued_at": stamp,
+                        "expires_at": expiry,
+                        "metadata": {
+                            "booking_id": booking_id,
+                            "guest_label": target["guest"],
+                            "review_overridden": target["review"],
+                        },
                     },
+                    "position": dates.to_epoch(stamp),
                 })
             checkins = await self.table("check_ins")
             if checkins is not None:
                 await workpeg.add_row(checkins["uuid"], {
-                    "check_in_id": "CI-" + booking_id,
-                    "booking_id": booking_id,
-                    "room_code": target["room_code"],
-                    "guest_label": target["guest"],
-                    "arrived_at": stamp,
-                    "verified_at": stamp,
-                    "approved_at": stamp,
-                    "activated_at": "",
-                    "check_in_status": "approved",
+                    "data": {
+                        "check_in_id": "CI-" + booking_id,
+                        "booking_id": booking_id,
+                        "room_code": target["room_code"],
+                        "guest_label": target["guest"],
+                        "arrived_at": stamp,
+                        "verified_at": stamp,
+                        "approved_at": stamp,
+                        "activated_at": "",
+                        "check_in_status": "approved",
+                    },
+                    "position": dates.to_epoch(stamp),
                 })
             queued = ""
             if target["device_code"]:
@@ -495,32 +506,38 @@ class FrontDeskPage(App):
             auth = await self.table("authorizations")
             if auth is not None:
                 await workpeg.add_row(auth["uuid"], {
-                    "event_id": "AUTH-" + booking_id + "-revoke",
-                    "business_id": route.business_id,
-                    "room_code": target["room_code"],
-                    "authorization_type": "room_activation",
-                    "status": "revoked",
-                    "source": "front_desk",
-                    "issued_by": "reception",
-                    "issued_at": stamp,
-                    "expires_at": None,
-                    "metadata": {
-                        "booking_id": booking_id,
-                        "reason": "guest checked out",
+                    "data": {
+                        "event_id": "AUTH-" + booking_id + "-revoke",
+                        "business_id": route.business_id,
+                        "room_code": target["room_code"],
+                        "authorization_type": "room_activation",
+                        "status": "revoked",
+                        "source": "front_desk",
+                        "issued_by": "reception",
+                        "issued_at": stamp,
+                        "expires_at": None,
+                        "metadata": {
+                            "booking_id": booking_id,
+                            "reason": "guest checked out",
+                        },
                     },
+                    "position": dates.to_epoch(stamp),
                 })
             checkins = await self.table("check_ins")
             if checkins is not None:
                 await workpeg.add_row(checkins["uuid"], {
-                    "check_in_id": "CI-" + booking_id + "-out",
-                    "booking_id": booking_id,
-                    "room_code": target["room_code"],
-                    "guest_label": target["guest"],
-                    "arrived_at": stamp,
-                    "verified_at": "",
-                    "approved_at": "",
-                    "activated_at": "",
-                    "check_in_status": "checked_out",
+                    "data": {
+                        "check_in_id": "CI-" + booking_id + "-out",
+                        "booking_id": booking_id,
+                        "room_code": target["room_code"],
+                        "guest_label": target["guest"],
+                        "arrived_at": stamp,
+                        "verified_at": "",
+                        "approved_at": "",
+                        "activated_at": "",
+                        "check_in_status": "checked_out",
+                    },
+                    "position": dates.to_epoch(stamp),
                 })
             queued = ""
             if target["device_code"]:
@@ -531,15 +548,18 @@ class FrontDeskPage(App):
             tasks = await self.table("staff_tasks")
             if tasks is not None:
                 await workpeg.add_row(tasks["uuid"], {
-                    "task_id": "TASK-" + booking_id + "-housekeeping",
-                    "business_id": route.business_id,
-                    "kind": "housekeeping",
-                    "room_code": target["room_code"],
-                    "detail": ("Turn the room after " + target["guest"]
-                               + " checked out."),
-                    "status": "open",
-                    "assigned_to": "",
-                    "created_at": stamp,
+                    "data": {
+                        "task_id": "TASK-" + booking_id + "-housekeeping",
+                        "business_id": route.business_id,
+                        "kind": "housekeeping",
+                        "room_code": target["room_code"],
+                        "detail": ("Turn the room after " + target["guest"]
+                                   + " checked out."),
+                        "status": "open",
+                        "assigned_to": "",
+                        "created_at": stamp,
+                    },
+                    "position": dates.to_epoch(stamp),
                 })
             self.action_note = ("Checked out " + target["guest"]
                                 + ". The grant is revoked and housekeeping has"
@@ -588,20 +608,24 @@ class FrontDeskPage(App):
                 return
             stamp = self.now_iso()
             await workpeg.add_row(table["uuid"], {
-                "verification_id": "VER-" + booking_id + "-demo",
-                "booking_id": booking_id,
-                "guest_label": target["guest"],
-                "room_code": target["room_code"],
-                "provider": "demo",
-                "session_id": "demo-" + booking_id,
-                "verification_url": "",
-                "provider_status": "verified",
-                "status": "verified",
-                "decision": "Recorded at the desk as a demo identity check.",
-                "reviewed_by": "front desk (demo)",
-                "created_at": stamp,
-                "updated_at": stamp,
-                "last_event_id": "",
+                "data": {
+                    "verification_id": "VER-" + booking_id + "-demo",
+                    "booking_id": booking_id,
+                    "guest_label": target["guest"],
+                    "room_code": target["room_code"],
+                    "provider": "demo",
+                    "session_id": "demo-" + booking_id,
+                    "verification_url": "",
+                    "provider_status": "verified",
+                    "status": "verified",
+                    "decision": "Recorded at the desk as a demo identity"
+                                " check.",
+                    "reviewed_by": "front desk (demo)",
+                    "created_at": stamp,
+                    "updated_at": stamp,
+                    "last_event_id": "",
+                },
+                "position": dates.to_epoch(stamp),
             })
             self.action_note = ("Demo identity check recorded for "
                                 + target["guest"] + " — it is labelled demo"
@@ -620,18 +644,21 @@ class FrontDeskPage(App):
             return ""
         code = "CMD-" + str(dates.to_epoch(stamp) or 0)
         await workpeg.add_row(table["uuid"], {
-            "command_id": code,
-            "business_id": route.business_id,
-            "room_code": room_code,
-            "device_code": device_code,
-            "command": command,
-            "status": "PENDING",
-            "issued_at": stamp,
-            "expires_at": "",
-            "idempotency_key": code,
-            "authorization_event_id": event_id,
-            "failure_reason": "",
-            "device_reported_state": "",
+            "data": {
+                "command_id": code,
+                "business_id": route.business_id,
+                "room_code": room_code,
+                "device_code": device_code,
+                "command": command,
+                "status": "PENDING",
+                "issued_at": stamp,
+                "expires_at": "",
+                "idempotency_key": code,
+                "authorization_event_id": event_id,
+                "failure_reason": "",
+                "device_reported_state": "",
+            },
+            "position": dates.to_epoch(stamp),
         })
         return ", and " + command + " is queued for the controller"
 

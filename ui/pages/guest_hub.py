@@ -53,31 +53,37 @@ class GuestHubPage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["service_requests"] = [
-            {"name": "request_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string"},
-            {"name": "guest_label", "type": "string"},
-            {"name": "category", "type": "string", "required": True},
-            {"name": "detail", "type": "string"},
-            {"name": "status", "type": "string"},
-            {"name": "assigned_to", "type": "string"},
-            {"name": "created_at", "type": "datetime"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "request_id", "name": "request_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 3000},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 4000},
+            {"id": "category", "name": "category", "type": "text", "position": 5000, "required": True},
+            {"id": "detail", "name": "detail", "type": "text", "position": 6000},
+            {"id": "status", "name": "status", "type": "text", "position": 7000},
+            {"id": "assigned_to", "name": "assigned_to", "type": "text", "position": 8000},
+            {"id": "created_at", "name": "created_at", "type": "datetime", "position": 9000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 10000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""
@@ -200,15 +206,19 @@ class GuestHubPage(App):
                 toast("Service requests are not available here", kind="danger")
             else:
                 await workpeg.add_row(table["uuid"], {
-                    "request_id": "SR-" + str(dates.to_epoch(now)),
-                    "booking_id": self.booking.get("booking_id") or "",
-                    "room_code": self.booking.get("room_code") or "",
-                    "guest_label": self.booking.get("guest_label") or "Guest",
-                    "category": self.category,
-                    "detail": text,
-                    "status": "requested",
-                    "created_at": now,
-                    "updated_at": now,
+                    "data": {
+                        "request_id": "SR-" + str(dates.to_epoch(now)),
+                        "booking_id": self.booking.get("booking_id") or "",
+                        "room_code": self.booking.get("room_code") or "",
+                        "guest_label": self.booking.get("guest_label")
+                        or "Guest",
+                        "category": self.category,
+                        "detail": text,
+                        "status": "requested",
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    "position": dates.to_epoch(now),
                 })
                 self.detail = ""
                 toast("Request sent to the front desk", kind="success")

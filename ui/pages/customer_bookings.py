@@ -31,27 +31,33 @@ class CustomerBookingsPage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["bookings"] = [
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "start_at", "type": "datetime", "required": True},
-            {"name": "end_at", "type": "datetime", "required": True},
-            {"name": "booking_status", "type": "string"},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000, "required": True},
+            {"id": "start_at", "name": "start_at", "type": "datetime", "position": 4000, "required": True},
+            {"id": "end_at", "name": "end_at", "type": "datetime", "position": 5000, "required": True},
+            {"id": "booking_status", "name": "booking_status", "type": "text", "position": 6000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""

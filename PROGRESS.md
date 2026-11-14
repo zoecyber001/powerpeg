@@ -91,6 +91,28 @@ the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
 
 ## In progress / next
 
+0. **The Tables API contract, learned the hard way (2026-11-14, later still).**
+   The 400s the user saw were the platform refusing our calls: the browser
+   talks to the **real api.workpeg.com** (the dev server only serves files),
+   and two shapes were wrong everywhere:
+   - **Rows are `{"data": {<column id>: value}, "position": n}`** — flat
+     dicts were silently dropped (unknown top-level keys). Every add_row in
+     the UI now wraps its payload and passes a position.
+   - **create_table needs `name` (display), `namespace` (a free label the
+     page then finds it by), `permission` ("760": owner full, staff
+     read+write) and columns as `{id, name, type, position, required}` with
+     API types (`text`, not `string`; `json` maps to `text`).** Every
+     page's `table(name)` now finds via `get_tables(name)` — the namespace
+     label — and creates in this shape on first use. Column ids are the
+     manifest's column names, so every read/write keeps its keys.
+   Source of truth: the SDK's shipped AGENTS.md §8 and the starter
+   CustomersPage. Also learned: `user.name`/`user.email` are documented;
+   `on_table_change` exists for live refresh (not wired yet).
+   Tests 90 ✓, build ✓, shell check ✓, dev server serving the new bundle
+   (SHA verified). This is the fix that should make the marketplace self-seed
+   and every write land; everything now hinges on a live retest.
+
+
 0. **The workspace now holds together (2026-11-14, later).** The user's
    screenshots (blank overview, vanishing rail/AI, white-square icons, "no
    rooms table") traced to three real causes, all fixed:

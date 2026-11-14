@@ -99,61 +99,67 @@ class MarketplacePage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["bookings"] = [
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "start_at", "type": "datetime", "required": True},
-            {"name": "end_at", "type": "datetime", "required": True},
-            {"name": "booking_status", "type": "string"},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000, "required": True},
+            {"id": "start_at", "name": "start_at", "type": "datetime", "position": 4000, "required": True},
+            {"id": "end_at", "name": "end_at", "type": "datetime", "position": 5000, "required": True},
+            {"id": "booking_status", "name": "booking_status", "type": "text", "position": 6000},
         ]
         defs["business_modules"] = [
-            {"name": "business_module_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "module_id", "type": "string", "required": True},
-            {"name": "installed", "type": "boolean"},
-            {"name": "enabled", "type": "boolean"},
-            {"name": "installed_at", "type": "datetime"},
-            {"name": "enabled_at", "type": "datetime"},
-            {"name": "disabled_at", "type": "datetime"},
-            {"name": "source", "type": "string"},
-            {"name": "metadata", "type": "json"},
+            {"id": "business_module_id", "name": "business_module_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "module_id", "name": "module_id", "type": "text", "position": 3000, "required": True},
+            {"id": "installed", "name": "installed", "type": "boolean", "position": 4000},
+            {"id": "enabled", "name": "enabled", "type": "boolean", "position": 5000},
+            {"id": "installed_at", "name": "installed_at", "type": "datetime", "position": 6000},
+            {"id": "enabled_at", "name": "enabled_at", "type": "datetime", "position": 7000},
+            {"id": "disabled_at", "name": "disabled_at", "type": "datetime", "position": 8000},
+            {"id": "source", "name": "source", "type": "text", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
         defs["payments"] = [
-            {"name": "payment_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "payment_status", "type": "string", "required": True},
-            {"name": "amount", "type": "number"},
-            {"name": "is_simulated", "type": "boolean"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "payment_id", "name": "payment_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "payment_status", "name": "payment_status", "type": "text", "position": 3000, "required": True},
+            {"id": "amount", "name": "amount", "type": "number", "position": 4000},
+            {"id": "is_simulated", "name": "is_simulated", "type": "boolean", "position": 5000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 6000},
         ]
         defs["rooms"] = [
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "display_name", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_type", "type": "string"},
-            {"name": "rate", "type": "number"},
-            {"name": "area", "type": "string"},
-            {"name": "star_rating", "type": "number"},
-            {"name": "pitch", "type": "string"},
-            {"name": "assigned_device_id", "type": "string"},
-            {"name": "authorised", "type": "boolean"},
-            {"name": "authorised_reason", "type": "string"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 1000, "required": True},
+            {"id": "display_name", "name": "display_name", "type": "text", "position": 2000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 3000},
+            {"id": "room_type", "name": "room_type", "type": "text", "position": 4000},
+            {"id": "rate", "name": "rate", "type": "number", "position": 5000},
+            {"id": "area", "name": "area", "type": "text", "position": 6000},
+            {"id": "star_rating", "name": "star_rating", "type": "number", "position": 7000},
+            {"id": "pitch", "name": "pitch", "type": "text", "position": 8000},
+            {"id": "assigned_device_id", "name": "assigned_device_id", "type": "text", "position": 9000},
+            {"id": "authorised", "name": "authorised", "type": "boolean", "position": 10000},
+            {"id": "authorised_reason", "name": "authorised_reason", "type": "text", "position": 11000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 12000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""
@@ -215,8 +221,11 @@ class MarketplacePage(App):
                          "visitors who want the view first.",
             },
         ]
+        position = 1000
         for row in stays:
-            await workpeg.add_row(table_uuid, row)
+            await workpeg.add_row(table_uuid, {"data": row,
+                                               "position": position})
+            position = position + 1000
 
     # -- formatting -------------------------------------------------------
 
@@ -457,61 +466,67 @@ class HotelDetailPage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["bookings"] = [
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "start_at", "type": "datetime", "required": True},
-            {"name": "end_at", "type": "datetime", "required": True},
-            {"name": "booking_status", "type": "string"},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000, "required": True},
+            {"id": "start_at", "name": "start_at", "type": "datetime", "position": 4000, "required": True},
+            {"id": "end_at", "name": "end_at", "type": "datetime", "position": 5000, "required": True},
+            {"id": "booking_status", "name": "booking_status", "type": "text", "position": 6000},
         ]
         defs["business_modules"] = [
-            {"name": "business_module_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "module_id", "type": "string", "required": True},
-            {"name": "installed", "type": "boolean"},
-            {"name": "enabled", "type": "boolean"},
-            {"name": "installed_at", "type": "datetime"},
-            {"name": "enabled_at", "type": "datetime"},
-            {"name": "disabled_at", "type": "datetime"},
-            {"name": "source", "type": "string"},
-            {"name": "metadata", "type": "json"},
+            {"id": "business_module_id", "name": "business_module_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "module_id", "name": "module_id", "type": "text", "position": 3000, "required": True},
+            {"id": "installed", "name": "installed", "type": "boolean", "position": 4000},
+            {"id": "enabled", "name": "enabled", "type": "boolean", "position": 5000},
+            {"id": "installed_at", "name": "installed_at", "type": "datetime", "position": 6000},
+            {"id": "enabled_at", "name": "enabled_at", "type": "datetime", "position": 7000},
+            {"id": "disabled_at", "name": "disabled_at", "type": "datetime", "position": 8000},
+            {"id": "source", "name": "source", "type": "text", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
         defs["payments"] = [
-            {"name": "payment_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "payment_status", "type": "string", "required": True},
-            {"name": "amount", "type": "number"},
-            {"name": "is_simulated", "type": "boolean"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "payment_id", "name": "payment_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "payment_status", "name": "payment_status", "type": "text", "position": 3000, "required": True},
+            {"id": "amount", "name": "amount", "type": "number", "position": 4000},
+            {"id": "is_simulated", "name": "is_simulated", "type": "boolean", "position": 5000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 6000},
         ]
         defs["rooms"] = [
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "display_name", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_type", "type": "string"},
-            {"name": "rate", "type": "number"},
-            {"name": "area", "type": "string"},
-            {"name": "star_rating", "type": "number"},
-            {"name": "pitch", "type": "string"},
-            {"name": "assigned_device_id", "type": "string"},
-            {"name": "authorised", "type": "boolean"},
-            {"name": "authorised_reason", "type": "string"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 1000, "required": True},
+            {"id": "display_name", "name": "display_name", "type": "text", "position": 2000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 3000},
+            {"id": "room_type", "name": "room_type", "type": "text", "position": 4000},
+            {"id": "rate", "name": "rate", "type": "number", "position": 5000},
+            {"id": "area", "name": "area", "type": "text", "position": 6000},
+            {"id": "star_rating", "name": "star_rating", "type": "number", "position": 7000},
+            {"id": "pitch", "name": "pitch", "type": "text", "position": 8000},
+            {"id": "assigned_device_id", "name": "assigned_device_id", "type": "text", "position": 9000},
+            {"id": "authorised", "name": "authorised", "type": "boolean", "position": 10000},
+            {"id": "authorised_reason", "name": "authorised_reason", "type": "text", "position": 11000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 12000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""
@@ -701,21 +716,28 @@ class HotelDetailPage(App):
             stamp = dates.to_epoch(dates.now("Africa/Lagos"))
             booking_id = "BKG-" + str(stamp)
             payment_id = "PAY-" + str(stamp)
+            stamp = dates.to_epoch(dates.now("Africa/Lagos"))
             await workpeg.add_row(bookings["uuid"], {
-                "booking_id": booking_id,
-                "room_code": self.room_code,
-                "guest_label": "Demo guest",
-                "start_at": self.check_in,
-                "end_at": self.check_out,
-                "booking_status": "confirmed",
+                "data": {
+                    "booking_id": booking_id,
+                    "room_code": self.room_code,
+                    "guest_label": "Demo guest",
+                    "start_at": self.check_in,
+                    "end_at": self.check_out,
+                    "booking_status": "confirmed",
+                },
+                "position": stamp,
             })
             await workpeg.add_row(payments["uuid"], {
-                "payment_id": payment_id,
-                "booking_id": booking_id,
-                "payment_status": "confirmed",
-                "amount": self.total,
-                "is_simulated": True,
-                "updated_at": dates.now("Africa/Lagos"),
+                "data": {
+                    "payment_id": payment_id,
+                    "booking_id": booking_id,
+                    "payment_status": "confirmed",
+                    "amount": self.total,
+                    "is_simulated": True,
+                    "updated_at": dates.now("Africa/Lagos"),
+                },
+                "position": stamp,
             })
             self.booking_id = booking_id
             self.payment_id = payment_id
@@ -1150,61 +1172,67 @@ class BusinessReservationsPage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["bookings"] = [
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "guest_label", "type": "string", "required": True},
-            {"name": "start_at", "type": "datetime", "required": True},
-            {"name": "end_at", "type": "datetime", "required": True},
-            {"name": "booking_status", "type": "string"},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 1000, "required": True},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 2000, "required": True},
+            {"id": "guest_label", "name": "guest_label", "type": "text", "position": 3000, "required": True},
+            {"id": "start_at", "name": "start_at", "type": "datetime", "position": 4000, "required": True},
+            {"id": "end_at", "name": "end_at", "type": "datetime", "position": 5000, "required": True},
+            {"id": "booking_status", "name": "booking_status", "type": "text", "position": 6000},
         ]
         defs["business_modules"] = [
-            {"name": "business_module_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "module_id", "type": "string", "required": True},
-            {"name": "installed", "type": "boolean"},
-            {"name": "enabled", "type": "boolean"},
-            {"name": "installed_at", "type": "datetime"},
-            {"name": "enabled_at", "type": "datetime"},
-            {"name": "disabled_at", "type": "datetime"},
-            {"name": "source", "type": "string"},
-            {"name": "metadata", "type": "json"},
+            {"id": "business_module_id", "name": "business_module_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "module_id", "name": "module_id", "type": "text", "position": 3000, "required": True},
+            {"id": "installed", "name": "installed", "type": "boolean", "position": 4000},
+            {"id": "enabled", "name": "enabled", "type": "boolean", "position": 5000},
+            {"id": "installed_at", "name": "installed_at", "type": "datetime", "position": 6000},
+            {"id": "enabled_at", "name": "enabled_at", "type": "datetime", "position": 7000},
+            {"id": "disabled_at", "name": "disabled_at", "type": "datetime", "position": 8000},
+            {"id": "source", "name": "source", "type": "text", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
         defs["payments"] = [
-            {"name": "payment_id", "type": "string", "required": True},
-            {"name": "booking_id", "type": "string", "required": True},
-            {"name": "payment_status", "type": "string", "required": True},
-            {"name": "amount", "type": "number"},
-            {"name": "is_simulated", "type": "boolean"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "payment_id", "name": "payment_id", "type": "text", "position": 1000, "required": True},
+            {"id": "booking_id", "name": "booking_id", "type": "text", "position": 2000, "required": True},
+            {"id": "payment_status", "name": "payment_status", "type": "text", "position": 3000, "required": True},
+            {"id": "amount", "name": "amount", "type": "number", "position": 4000},
+            {"id": "is_simulated", "name": "is_simulated", "type": "boolean", "position": 5000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 6000},
         ]
         defs["rooms"] = [
-            {"name": "room_code", "type": "string", "required": True},
-            {"name": "display_name", "type": "string", "required": True},
-            {"name": "status", "type": "string"},
-            {"name": "room_type", "type": "string"},
-            {"name": "rate", "type": "number"},
-            {"name": "area", "type": "string"},
-            {"name": "star_rating", "type": "number"},
-            {"name": "pitch", "type": "string"},
-            {"name": "assigned_device_id", "type": "string"},
-            {"name": "authorised", "type": "boolean"},
-            {"name": "authorised_reason", "type": "string"},
-            {"name": "updated_at", "type": "datetime"},
+            {"id": "room_code", "name": "room_code", "type": "text", "position": 1000, "required": True},
+            {"id": "display_name", "name": "display_name", "type": "text", "position": 2000, "required": True},
+            {"id": "status", "name": "status", "type": "text", "position": 3000},
+            {"id": "room_type", "name": "room_type", "type": "text", "position": 4000},
+            {"id": "rate", "name": "rate", "type": "number", "position": 5000},
+            {"id": "area", "name": "area", "type": "text", "position": 6000},
+            {"id": "star_rating", "name": "star_rating", "type": "number", "position": 7000},
+            {"id": "pitch", "name": "pitch", "type": "text", "position": 8000},
+            {"id": "assigned_device_id", "name": "assigned_device_id", "type": "text", "position": 9000},
+            {"id": "authorised", "name": "authorised", "type": "boolean", "position": 10000},
+            {"id": "authorised_reason", "name": "authorised_reason", "type": "text", "position": 11000},
+            {"id": "updated_at", "name": "updated_at", "type": "datetime", "position": 12000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         self.loading = True
         self.error = ""

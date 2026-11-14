@@ -42,31 +42,37 @@ class ModulePage(App):
     async def table(self, name):
         """This business's table with that name, created if absent.
 
-        The definitions mirror the manifest, so a table the business
-        has never used is created here on first use instead of
-        answering "no such table"."""
+        Found by the table's own namespace label (get_tables filters
+        on it); a table the business has never used is created here
+        on first use, in the shape the Tables API expects: display
+        name, namespace label, permission, and columns with ids,
+        types and positions. Column ids are the manifest's column
+        names, so every row write and read keeps its keys."""
         defs = {}
         defs["business_modules"] = [
-            {"name": "business_module_id", "type": "string", "required": True},
-            {"name": "business_id", "type": "string", "required": True},
-            {"name": "module_id", "type": "string", "required": True},
-            {"name": "installed", "type": "boolean"},
-            {"name": "enabled", "type": "boolean"},
-            {"name": "installed_at", "type": "datetime"},
-            {"name": "enabled_at", "type": "datetime"},
-            {"name": "disabled_at", "type": "datetime"},
-            {"name": "source", "type": "string"},
-            {"name": "metadata", "type": "json"},
+            {"id": "business_module_id", "name": "business_module_id", "type": "text", "position": 1000, "required": True},
+            {"id": "business_id", "name": "business_id", "type": "text", "position": 2000, "required": True},
+            {"id": "module_id", "name": "module_id", "type": "text", "position": 3000, "required": True},
+            {"id": "installed", "name": "installed", "type": "boolean", "position": 4000},
+            {"id": "enabled", "name": "enabled", "type": "boolean", "position": 5000},
+            {"id": "installed_at", "name": "installed_at", "type": "datetime", "position": 6000},
+            {"id": "enabled_at", "name": "enabled_at", "type": "datetime", "position": 7000},
+            {"id": "disabled_at", "name": "disabled_at", "type": "datetime", "position": 8000},
+            {"id": "source", "name": "source", "type": "text", "position": 9000},
+            {"id": "metadata", "name": "metadata", "type": "text", "position": 10000},
         ]
-        tables = await workpeg.get_tables()
-        for candidate in tables:
-            if candidate.get("name") == name:
-                return candidate
+        tables = await workpeg.get_tables(name)
+        if len(tables) > 0:
+            return tables[0]
         definition = defs.get(name)
         if definition is None:
             return None
-        return await workpeg.create_table({"name": name,
-                                            "columns": definition})
+        return await workpeg.create_table({
+            "name": name,
+            "namespace": name,
+            "permission": "760",
+            "columns": definition,
+        })
     async def load(self):
         try:
             self.error = ""
