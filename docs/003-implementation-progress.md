@@ -1,10 +1,14 @@
 # PegPower dev-environment audit — implementation progress
 
-Status snapshot: **2026-11-14**. This doc tracks the live state of the audit
+Status snapshot: **2026-11-14 (updated live as you edit)**. This doc tracks the live state of the audit
 brief work in this repository, what is done, what is blocked, and what would
 need to change to finish without overclaiming.
 
 ## What is done
+
+> Note: `function/app/main.py` and other files are also being edited by a human concurrently.
+> "Uncommitted" below is a snapshot, not a guarantee of the current file state — verify the
+> file directly when a claim depends on a specific line.
 
 ### 1. Release / publish path (done, verified)
 
@@ -131,7 +135,7 @@ now returns ISO strings at the SDK-envelope, `run_once` and HTTP /invoke levels.
 
 - `.venv/bin/python -c "import py_compile; py_compile.compile('function/app/main.py',
   doraise=True)"` → OK.
-- `PYTHONPATH=function .venv/bin/pytest -q tests/` → **88 passed**.
+- `PYTHONPATH=function .venv/bin/pytest -q tests/` → **89 passed**.
 - `workpeg ui build ui/` → "Built to ui/dist", exit 0, `ui/dist/app.js`
   155,720 bytes.
 - `workpeg function build --path function/` → Docker image
@@ -267,11 +271,13 @@ separate `workpeg.runtime` /invoke server on port 8000.
 - The 443 dev server (pid 509699, `.venv-workpeg/bin/python`, `ui serve ui/ --fake-cloud
   --listen`) is still running and serves the UI page (200 with `Host:
   pegpower.dev.workpeg.com`), but its function endpoint returns `501 Not Implemented`
-  for action POSTs to `/` — the function runner is not returning action responses from
-  this environment. I cannot restart it against the current `main.py` here: a fresh
-  `workpeg ui serve --fake-cloud --listen` on 443 needs `sudo`/setcap (uid 1000),
-  and `--listen` also hits `"This peg is not installed for testing in your business"`
-  (an owner/admin action at the developer dash, not doable from here).
+  for action POSTs to `/`. This is the live-server block: `dev_initialize_business` (and
+  `get_status`) cannot be invoked through that server's function endpoint from this
+  environment, and the UI function-side state therefore cannot be read back here.
+  Rebuilding/restarting against current code is blocked: a fresh `workpeg ui serve
+  --fake-cloud --listen` on 443 needs `sudo`/setcap (uid 1000), and `--listen` also
+  hits `"This peg is not installed for testing in your business"` (an owner/admin action
+  at the developer dash, not doable from here). Recorded honestly as a limitation.
 - The 5 function wheels are cp312 (Python 3.12) while this env runs Python 3.14.7;
   the function runtime base is `pegfn-base:0.163.0` (Python 3.12). The Docker build
   succeeds locally; the wheels are what the platform build would use.
