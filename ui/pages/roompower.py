@@ -35,11 +35,13 @@ class RoomPowerPage(App):
     seed_note = State("")
     devices = State([])
     command_rows = State([])
+    rooms = State([])
     device_count = State(0)
     command_count = State(0)
     command_summary = State("")
     online_count = State(0)
     awaiting_count = State(0)
+    room_count = State(0)
 
     async def on_mount(self):
         store.page_title = "RoomPower"
@@ -158,6 +160,19 @@ class RoomPowerPage(App):
                     rows = rows[::-1]
                     self.command_rows = rows
                     self.awaiting_count = awaiting
+                rooms_table = await self.table("rooms")
+                if rooms_table is not None:
+                    found = []
+                    for row in await workpeg.get_rows(rooms_table["uuid"],
+                                                      limit=100):
+                        data = row.get("data") or {}
+                        if data.get("room_code"):
+                            data["view_url"] = biz_url(
+                                "/roompower/room/"
+                                + data.get("room_code"))
+                            found.append(data)
+                    self.rooms = found
+                    self.room_count = len(found)
             self.device_count = len(self.devices)
             self.command_count = len(self.command_rows)
             if self.command_count == 1:
@@ -316,11 +331,49 @@ class RoomPowerPage(App):
         else:
             return Column(
                 self.seed_messages(),
+                self.rooms_section(),
                 self.devices_table(),
                 self.commands_table(),
                 gap=24,
                 align="stretch",
             )
+
+    def rooms_section(self):
+        """The rooms this business keeps, each opening its room view."""
+        if self.room_count == 0:
+            return Spacer()
+        return Column(
+            Row(
+                Text("Rooms", weight="semibold"),
+                Text("Click a room to see its appliances and power",
+                     variant="caption"),
+                align="center", gap=8,
+            ),
+            Row(*[Expanded(self.room_card(r)) for r in self.rooms],
+                gap=12, align="stretch"),
+            gap=10, align="stretch",
+        )
+
+    def room_card(self, room):
+        return Container(
+            Column(
+                Row(
+                    Icon("photo", size=16),
+                    Text("Room photo placeholder", variant="caption"),
+                    gap=6, align="center",
+                ),
+                Text(room.get("display_name") or "Room", weight="medium"),
+                Text(room.get("room_code") or "", variant="muted"),
+                Row(
+                    Tag(room.get("status") or "unknown"),
+                    Spacer(),
+                    Link("Open room view", href=room.get("view_url")),
+                    gap=8, align="center",
+                ),
+                gap=6, align="start",
+            ),
+            variant="card", padding=16,
+        )
 
     def seed_messages(self):
         """The demo-seed result, shown until the next reload clears it."""

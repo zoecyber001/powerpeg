@@ -91,6 +91,30 @@ the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
 
 ## In progress / next
 
+0. **Room view: click a room, see its appliances (2026-11-14).**
+   New `ui/pages/room_view.py` at `/roompower/room/[room_code]`: the room's
+   photo placeholder and facts, then three appliance cards — air
+   conditioning (with a **simulated air temperature** that drifts toward
+   22.0°C while the relay is ON and toward 30.0°C when it is off,
+   re-drawn every 1.5 s via `set_interval(self.tick, 1500)` registered
+   *before* the first await; stored as tenths of a degree so the display
+   reads `23.4°C` without floats), TV (On/Standby) and Lights (On/Off) —
+   all derived from the latest `device_reports` relay row for the room's
+   controller (fallback: `devices.reported_relay_state`), each honestly
+   labelled as simulated from the demo twin. Every image slot is a plain
+   placeholder ("Room photo placeholder" etc.) until real photos exist.
+   RoomPower page now shows room cards above the devices table (photo
+   placeholder strip, status Tag, "Open room view" link); the twin
+   console links back to the room. Compiler lesson re-confirmed: widget-
+   helper calls may not sit inside Component **kwarg props** — helpers
+   that differ only by tone must return the whole `Tag(...)` instead
+   (`ac_tag()`/`tv_tag()`/`lights_tag()`); positional calls
+   (`Text(self.temp_display(), ...)`) are fine.
+   Build ✓, 90 tests ✓, shell check ✓, dev server serving the new bundle
+   (SHA `6aed2d7f…`). Live retest of BOTH this and the Tables API fixes
+   still pending from the user.
+
+
 0. **The Tables API contract, learned the hard way (2026-11-14, later still).**
    The 400s the user saw were the platform refusing our calls: the browser
    talks to the **real api.workpeg.com** (the dev server only serves files),

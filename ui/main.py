@@ -27,6 +27,7 @@ from pages.bookings import BookingsPage
 from pages.booking_detail import BookingDetailPage
 from pages.roompower import RoomPowerPage
 from pages.roompower_device import RoomPowerDevicePage
+from pages.room_view import RoomViewPage
 from pages.customer_bookings import CustomerBookingsPage
 from pages.commerce import MarketplacePage, HotelDetailPage, BusinessReservationsPage
 
@@ -97,6 +98,7 @@ class Main(Router):
             Route("/bookings/[booking_id]", BookingDetailPage),
             Route("/roompower", RoomPowerPage),
             Route("/roompower/[device_code]", RoomPowerDevicePage),
+            Route("/roompower/room/[room_code]", RoomViewPage),
             Route("/m/[module_id]", ModulePage),
             Route("/quickpass", QuickPassPage),
             Route("/guest/[booking_id]", GuestHubPage),

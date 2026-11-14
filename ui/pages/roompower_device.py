@@ -15,8 +15,8 @@ the browser, and the page says so wherever it could be mistaken for hardware.
 """
 from workpeg.ui import (
     App, State, Padding, Column, Row, Container, Text, Button, Table,
-    TableHeader, TableCell, TableRow, Tag, Divider, Icon, Spacer, dates,
-    route, biz_url, navigate, set_title, store, workpeg, toast,
+    TableHeader, TableCell, TableRow, Tag, Divider, Icon, Spacer, Link,
+    dates, route, biz_url, navigate, set_title, store, workpeg, toast,
 )
 
 from components import (
@@ -623,7 +623,12 @@ class RoomPowerDevicePage(App):
 
     def room_card(self):
         return Column(
-            Text("Room", weight="semibold"),
+            Row(
+                Text("Room", weight="semibold"),
+                Spacer(),
+                self.room_link(),
+                gap=8, align="center",
+            ),
             Column(
                 FactRow("Room", self.room.get("display_name") or "—"),
                 FactRow("Room code", self.room.get("room_code") or "—"),
@@ -637,6 +642,13 @@ class RoomPowerDevicePage(App):
             gap=8,
             align="stretch",
         )
+
+    def room_link(self):
+        if self.room.get("room_code"):
+            return Link("Open room view",
+                        href=biz_url("/roompower/room/"
+                                     + self.room.get("room_code")))
+        return Spacer()
 
     def report_card(self):
         return Column(
