@@ -1,9 +1,15 @@
 {
-  "name": "PegPower",
+  "name": "QuickPass Workpeg",
   "namespace": "pegpower",
-  "version": "1.0.1",
-  "description": "Smart electricity access control and monitoring demo for the Workpeg hackathon. Room booking + simulated payment authorisation drive virtual power commands to a room's assigned controller, while a software electrical simulator streams labelled sample readings.",
+  "version": "1.0.2",
+  "description": "PegPower is the hospitality operating platform: PegPower Core plus installable business modules (Pegs). This peg is the first coherent PegPower Peg, containing internally organized modules — Bookings & Inventory, QuickPass (guest identity and check-in), RoomPower (room controllers, electricity monitoring, commands, telemetry, energy alerts), Guest Hub, Deals, Property Ops — with per-business module activation and configuration. The peg is internal and Python-only; any customer-facing hospitality marketplace surface lives on the operator's own server/site, not on the peg.",
   "author": "PegPower Hackathon Team",
+  "scopes": [
+    "inbound"
+  ],
+  "dev": {
+    "others": "deny"
+  },
   "function": {
     "entrypoint": "app.main:main",
     "runtime": "python3.12",
@@ -41,6 +47,31 @@
           "default": "available"
         },
         {
+          "name": "room_type",
+          "type": "string",
+          "description": "suite, deluxe, standard, apartment - the marketplace's kind label."
+        },
+        {
+          "name": "rate",
+          "type": "number",
+          "description": "Nightly rate in naira, as the business sells it."
+        },
+        {
+          "name": "area",
+          "type": "string",
+          "description": "Neighbourhood, e.g. Lekki."
+        },
+        {
+          "name": "star_rating",
+          "type": "number",
+          "default": 4
+        },
+        {
+          "name": "pitch",
+          "type": "string",
+          "description": "The business's own one-sentence description of the stay."
+        },
+        {
           "name": "assigned_device_id",
           "type": "string"
         },
@@ -57,7 +88,8 @@
           "name": "updated_at",
           "type": "datetime"
         }
-      ]
+      ],
+      "permission": "740"
     },
     {
       "name": "bookings",
@@ -96,7 +128,8 @@
       ],
       "hooks": {
         "post_save": "pegpower.on_booking_post_save"
-      }
+      },
+      "permission": "740"
     },
     {
       "name": "payments",
@@ -134,7 +167,8 @@
       ],
       "hooks": {
         "post_save": "pegpower.on_payment_post_save"
-      }
+      },
+      "permission": "740"
     },
     {
       "name": "devices",
@@ -167,8 +201,16 @@
         {
           "name": "last_seen_at",
           "type": "datetime"
+        },
+        {
+          "name": "firmware",
+          "type": "string"
         }
-      ]
+      ],
+      "hooks": {
+        "post_save": "pegpower.on_device_post_save"
+      },
+      "permission": "740"
     },
     {
       "name": "commands",
@@ -195,18 +237,49 @@
           "default": "PENDING"
         },
         {
+          "name": "room_code",
+          "type": "string"
+        },
+        {
           "name": "issued_at",
           "type": "datetime"
         },
         {
-          "name": "delivered_at",
+          "name": "sent_at",
           "type": "datetime"
+        },
+        {
+          "name": "expires_at",
+          "type": "datetime",
+          "description": "A command that is not acknowledged before this is EXPIRED."
         },
         {
           "name": "acknowledged_at",
           "type": "datetime"
+        },
+        {
+          "name": "authorization_event_id",
+          "type": "string",
+          "description": "The Core grant that permitted this command, when one was required."
+        },
+        {
+          "name": "idempotency_key",
+          "type": "string"
+        },
+        {
+          "name": "failure_reason",
+          "type": "string"
+        },
+        {
+          "name": "device_reported_state",
+          "type": "json",
+          "description": "What the device claimed when it acknowledged; never the command's own status."
         }
-      ]
+      ],
+      "hooks": {
+        "post_save": "pegpower.on_command_post_save"
+      },
+      "permission": "740"
     },
     {
       "name": "telemetry",
@@ -245,7 +318,8 @@
       ],
       "hooks": {
         "post_save": "pegpower.on_telemetry_post_save"
-      }
+      },
+      "permission": "740"
     },
     {
       "name": "alerts",
@@ -281,7 +355,212 @@
           "type": "string",
           "default": "ACTIVE"
         }
-      ]
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "check_ins",
+      "description": "Authorised check-in records that drive room activation.",
+      "columns": [
+        {
+          "name": "check_in_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "booking_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "room_code",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "guest_label",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "arrived_at",
+          "type": "datetime"
+        },
+        {
+          "name": "verified_at",
+          "type": "datetime"
+        },
+        {
+          "name": "approved_at",
+          "type": "datetime"
+        },
+        {
+          "name": "activated_at",
+          "type": "datetime"
+        },
+        {
+          "name": "check_in_status",
+          "type": "string",
+          "default": "arrived"
+        }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "authorizations",
+      "description": "PegPower Core authorization events: the one contract RoomPower consumes. A grant is per room and in force only while it is the latest event, granted and unexpired.",
+      "columns": [
+        { "name": "event_id", "type": "string", "required": true },
+        { "name": "business_id", "type": "string", "required": true },
+        { "name": "room_code", "type": "string", "required": true },
+        { "name": "authorization_type", "type": "string", "default": "room_activation" },
+        { "name": "status", "type": "string", "required": true },
+        { "name": "source", "type": "string", "default": "quickpass" },
+        { "name": "issued_by", "type": "string" },
+        { "name": "issued_at", "type": "datetime" },
+        { "name": "expires_at", "type": "datetime" },
+        { "name": "metadata", "type": "json" }
+      ],
+      "hooks": { "post_save": "pegpower.on_authorization_post_save" },
+      "permission": "740"
+    },
+    {
+      "name": "verifications",
+      "description": "Guest identity verifications. The provider session id and normalized outcome are kept; raw documents and biometrics are not stored here.",
+      "columns": [
+        { "name": "verification_id", "type": "string", "required": true },
+        { "name": "booking_id", "type": "string", "required": true },
+        { "name": "guest_label", "type": "string" },
+        { "name": "room_code", "type": "string" },
+        { "name": "provider", "type": "string", "default": "demo" },
+        { "name": "session_id", "type": "string" },
+        { "name": "verification_url", "type": "string" },
+        { "name": "provider_status", "type": "string" },
+        { "name": "status", "type": "string", "default": "pending" },
+        { "name": "decision", "type": "string" },
+        { "name": "reviewed_by", "type": "string" },
+        { "name": "created_at", "type": "datetime" },
+        { "name": "updated_at", "type": "datetime" }
+      ],
+      "hooks": { "post_save": "pegpower.on_verification_post_save" },
+      "permission": "740"
+    },
+    {
+      "name": "service_requests",
+      "description": "Guest requests from the hub: room service, housekeeping, maintenance. Tracked to completion by staff.",
+      "columns": [
+        { "name": "request_id", "type": "string", "required": true },
+        { "name": "booking_id", "type": "string", "required": true },
+        { "name": "room_code", "type": "string" },
+        { "name": "guest_label", "type": "string" },
+        { "name": "category", "type": "string", "required": true },
+        { "name": "detail", "type": "string" },
+        { "name": "status", "type": "string", "default": "requested" },
+        { "name": "assigned_to", "type": "string" },
+        { "name": "created_at", "type": "datetime" },
+        { "name": "updated_at", "type": "datetime" }
+      ],
+      "hooks": { "post_save": "pegpower.on_service_request_post_save" },
+      "permission": "740"
+    },
+    {
+      "name": "staff_tasks",
+      "description": "Work the platform raised for staff: housekeeping after checkout, maintenance from a request.",
+      "columns": [
+        { "name": "task_id", "type": "string", "required": true },
+        { "name": "business_id", "type": "string" },
+        { "name": "kind", "type": "string", "required": true },
+        { "name": "room_code", "type": "string" },
+        { "name": "detail", "type": "string" },
+        { "name": "status", "type": "string", "default": "open" },
+        { "name": "assigned_to", "type": "string" },
+        { "name": "created_at", "type": "datetime" }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "business_module_settings",
+      "description": "DEPRECATED aggregate kept for backwards compatibility: one row per business holding enabled_modules and per-module config from the earlier QuickPass module model. Superseded by business_modules + module_config; historical rows are preserved, never deleted on disable.",
+      "columns": [
+        {
+          "name": "business_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "enabled_modules",
+          "type": "json"
+        },
+        {
+          "name": "module_config",
+          "type": "json"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime"
+        }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "module_catalog",
+      "description": "Peg Marketplace catalog: available modules and their metadata, owned by PegPower platform administration.",
+      "columns": [
+        { "name": "module_id", "type": "string", "required": true },
+        { "name": "name", "type": "string", "required": true },
+        { "name": "description", "type": "string" },
+        { "name": "category", "type": "string", "default": "operations" },
+        { "name": "version", "type": "string" },
+        { "name": "status", "type": "string", "default": "available" },
+        { "name": "surface", "type": "string", "default": "admin" },
+        { "name": "requires_payment", "type": "boolean", "default": false },
+        { "name": "metadata", "type": "json" }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "module_profile",
+      "description": "Business-type default module recommendations, owned by PegPower platform administration. A recommendation is not an installation.",
+      "columns": [
+        { "name": "profile_id", "type": "string", "required": true },
+        { "name": "business_type", "type": "string", "required": true },
+        { "name": "module_id", "type": "string", "required": true },
+        { "name": "recommended", "type": "boolean", "default": true },
+        { "name": "default_enabled", "type": "boolean" },
+        { "name": "sort_order", "type": "number", "default": 0 },
+        { "name": "metadata", "type": "json" }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "business_modules",
+      "description": "Actual module installations and activation state per business. Recommended is not installed; installed is not necessarily enabled. Disabling keeps historical records.",
+      "columns": [
+        { "name": "business_module_id", "type": "string", "required": true },
+        { "name": "business_id", "type": "string", "required": true },
+        { "name": "module_id", "type": "string", "required": true },
+        { "name": "installed", "type": "boolean", "default": true },
+        { "name": "enabled", "type": "boolean", "default": false },
+        { "name": "installed_at", "type": "datetime" },
+        { "name": "enabled_at", "type": "datetime" },
+        { "name": "disabled_at", "type": "datetime" },
+        { "name": "source", "type": "string", "default": "admin" },
+        { "name": "metadata", "type": "json" }
+      ],
+      "permission": "740"
+    },
+    {
+      "name": "module_config",
+      "description": "Configuration settings for each business/module combination.",
+      "columns": [
+        { "name": "business_config_id", "type": "string", "required": true },
+        { "name": "business_id", "type": "string", "required": true },
+        { "name": "module_id", "type": "string", "required": true },
+        { "name": "key", "type": "string", "required": true },
+        { "name": "value", "type": "json" },
+        { "name": "updated_at", "type": "datetime" }
+      ],
+      "permission": "740"
     }
   ]
 }

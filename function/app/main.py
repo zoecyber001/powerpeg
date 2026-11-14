@@ -77,8 +77,57 @@ mixes real and simulated so the UI can be honest:
 None of the telemetry in this function is a measurement from the AZ3166.
 """
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+
+from . import commands
+from . import guestops
+from . import quickpass
+from . import roompower
+from .authorization import (
+    authorize_room_activation,
+    dispatch_activation,
+    dispatch_checkout,
+    effective_authorization,
+    ensure_module_enabled,
+    ingest_event,
+    is_module_installed_and_enabled,
+    last_authorized_room_activation,
+    require_authorization,
+    revoke_room_activation,
+)
+from .checkins import (
+    activate_room,
+    approve_check_in,
+    check_out,
+    create_check_in,
+    get_check_in,
+    list_check_ins,
+    verify_check_in,
+)
+from .modules import (
+    ModuleDependencyError,
+    business_surface,
+    business_types,
+    catalog_get,
+    catalog_list,
+    describe_module,
+    disable_module,
+    enable_module,
+    get_business_modules,
+    get_module_config,
+    install_for_profile,
+    install_module,
+    missing_dependencies,
+    module_dependencies,
+    module_events,
+    module_gate,
+    module_is_enabled_for,
+    profile_for,
+    set_module_config,
+)
+from .platform import build_surface, module_is_live
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,6 +152,31 @@ def _parse_ts(value: Any) -> Optional[datetime]:
 
 def _now_dt() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _stay_windows(count: int = 4) -> List[Dict[str, Any]]:
+    """Bookable check-in/check-out pairs, starting tomorrow in Lagos time.
+
+    The UI cannot compute dates (its expressions have no clock), so the
+    windows it offers are derived here, from the same datetimes the booking
+    action validates against.
+    """
+    lagos = timezone(timedelta(hours=1))
+    base = (datetime.now(lagos) + timedelta(days=1)).replace(
+        hour=14, minute=0, second=0, microsecond=0
+    )
+    out: List[Dict[str, Any]] = []
+    for offset in range(count):
+        start = base + timedelta(days=offset)
+        end = start + timedelta(days=2)
+        out.append({
+            "check_in": start.isoformat(),
+            "check_out": end.isoformat(),
+            "label": start.strftime("%a %d %b"),
+            "out_label": end.strftime("%a %d %b"),
+            "nights": 2,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +214,8 @@ def _seed():
     _SEEDED = True
 
     now = _now_dt()
+    three_hours_ago = now - timedelta(hours=3)
+    twenty_one_hours_later = three_hours_ago + timedelta(hours=21)
 
     # Devices
     _upsert_device(
@@ -168,6 +244,8 @@ def _seed():
         authorised=False,
         authorised_reason="No active booking found",
         updated_at=now,
+        room_type="deluxe",
+        rate=185000.0,
     )
     _upsert_room(
         room_code="ROOM-101",
@@ -177,6 +255,8 @@ def _seed():
         authorised=True,
         authorised_reason="Confirmed booking (Marcus Vance (VIP)) with verified payment",
         updated_at=now,
+        room_type="suite",
+        rate=240000.0,
     )
     _upsert_room(
         room_code="ROOM-102",
@@ -186,6 +266,8 @@ def _seed():
         authorised=False,
         authorised_reason="No active booking found",
         updated_at=now,
+        room_type="standard",
+        rate=95000.0,
     )
 
     # Bookings + payments
@@ -666,9 +748,13 @@ def confirm_payment(payment_id: str, payment_status: str = "confirmed", amount: 
 def on_payment_post_save(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Workpeg hook: pegpower.on_payment_post_save.
 
-    The manifest delivers the saved row as payload. We authorise or
-    un-authorise the room the payment belongs to, and queue a POWER_ON /
-    POWER_OFF command for the room's assigned device if there is one.
+    The manifest delivers the saved row as payload. Payment confirmation moves
+    the booking to paid and re-derives the room's legacy `authorised` flag, but
+    it does NOT grant room access: in this architecture the grant is a Core
+    authorization event emitted when the guest is verified and reception
+    approves the check-in. A failed/refunded payment revokes any grant and
+    applies the business's checkout energy policy, so nothing stays live for an
+    unpaid room.
     """
     payment_status = (payload.get("payment_status") or "").lower()
     booking_id = payload.get("booking_id")
@@ -686,20 +772,33 @@ def on_payment_post_save(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if payment_status == "confirmed":
         room["authorised"] = True
-        room["authorised_reason"] = f"Verified payment confirmed in Workpeg table"
+        room["authorised_reason"] = "Verified payment confirmed in Workpeg table"
         room["updated_at"] = _utc_now()
-        cmd = None
-        if room.get("assigned_device_id"):
-            cmd = queue_command(room["assigned_device_id"], "POWER_ON")
-        return {"ok": True, "authorised": True, "dispatched_command": cmd}
+        return {
+            "ok": True,
+            "authorised": True,
+            "payment_status": payment_status,
+            "dispatched_command": None,
+            "note": "payment does not grant room access; the activation grant is issued at check-in approval",
+        }
 
     room["authorised"] = False
-    room["authorised_reason"] = f"Payment status changed to {status}"
+    room["authorised_reason"] = f"Payment status changed to {payment_status}"
     room["updated_at"] = _utc_now()
-    cmd = None
-    if room.get("assigned_device_id"):
-        cmd = queue_command(room["assigned_device_id"], "POWER_OFF")
-    return {"ok": True, "authorised": False, "dispatched_command": cmd}
+    result = dispatch_checkout(
+        payload.get("business_id", ""),
+        room_code,
+        room.get("assigned_device_id"),
+        source="payment",
+        reason=f"payment status {payment_status}",
+    )
+    return {
+        "ok": True,
+        "authorised": False,
+        "payment_status": payment_status,
+        "dispatched_command": result.get("command"),
+        "energy": result.get("energy"),
+    }
 
 
 def on_booking_post_save(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -774,14 +873,36 @@ def on_telemetry_post_save(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "anomaly_detected": bool(alert), "alert": alert}
 
 
-def queue_command(device_code: str, command: str, *, room_code: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Queue a POWER_ON / POWER_OFF / STATUS_REQUEST command for a device.
+#: Commands this peg understands. Anything else is refused rather than
+#: forwarded to a device.
+DEVICE_COMMANDS = (
+    "POWER_ON",
+    "POWER_OFF",
+    "STATUS_REQUEST",
+    "CUT_NON_ESSENTIAL",
+    "SET_ENERGY_MODE",
+)
+
+
+def queue_command(
+    device_code: str,
+    command: str,
+    *,
+    room_code: Optional[str] = None,
+    business_id: str = "",
+    authorization_event_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    payload: Optional[dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Queue a command for a device through the command lifecycle.
 
     If room_code is supplied, the device must be the room's assigned
-    controller; otherwise the device must exist.
+    controller; otherwise the device must exist. Returns None for an invalid
+    device, room or command, matching the earlier behaviour; the detailed
+    lifecycle lives in app.commands and is exposed by the command_* actions.
     """
     command = (command or "").upper()
-    if command not in ("POWER_ON", "POWER_OFF", "STATUS_REQUEST"):
+    if command not in DEVICE_COMMANDS:
         return None
 
     if room_code:
@@ -791,10 +912,16 @@ def queue_command(device_code: str, command: str, *, room_code: Optional[str] = 
     elif not _TABLES["devices"].get(device_code):
         return None
 
-    cmd_id = _next_id("command")
-    now = _utc_now()
-    cmd = _upsert_command(command_id=cmd_id, device_code=device_code, command=command, status="PENDING", issued_at=now)
-    return cmd
+    return commands.queue(
+        business_id,
+        device_code,
+        command,
+        room_code=room_code,
+        authorization_event_id=authorization_event_id,
+        idempotency_key=idempotency_key,
+        payload=payload,
+        actor="pegpower",
+    )
 
 
 def device_poll(device_code: str, *, room_code: Optional[str] = None) -> Dict[str, Any]:
@@ -811,20 +938,22 @@ def device_poll(device_code: str, *, room_code: Optional[str] = None) -> Dict[st
     elif not _TABLES["devices"].get(device_code):
         return {"ok": False, "error": f"device {device_code} not found"}
 
+    commands.expire_due()
+    now = _now_dt()
     pending = [
-        (cid, row)
-        for cid, row in _TABLES["commands"].items()
-        if row.get("device_code") == device_code and row.get("status") == "PENDING"
+        row
+        for row in commands.list_commands(device_code=device_code, status=commands.PENDING)
+        if not row.get("not_before") or (_parse_ts(row["not_before"]) or now) <= now
     ]
-    pending.sort(key=lambda t: _parse_ts(t[1].get("issued_at")) or _now_dt())
+    pending.sort(key=lambda row: _parse_ts(row.get("issued_at")) or now)
 
     if not pending:
         return {"ok": True, "command": None}
 
-    cmd_id, cmd = pending[0]
-    cmd["status"] = "DELIVERED"
-    cmd["delivered_at"] = _utc_now()
-    return {"ok": True, "command": cmd}
+    result = commands.mark_sent(pending[0]["command_id"])
+    if not result.get("ok"):
+        return result
+    return {"ok": True, "command": result["command"]}
 
 
 def device_ack(command_id: str, device_code: str, reported_relay_state: str = "OFF", *, room_code: Optional[str] = None) -> Dict[str, Any]:
@@ -840,19 +969,35 @@ def device_ack(command_id: str, device_code: str, reported_relay_state: str = "O
     elif not _TABLES["devices"].get(device_code):
         return {"ok": False, "error": f"device {device_code} not found"}
 
-    cmd = _TABLES["commands"].get(command_id)
-    if not cmd or cmd.get("device_code") != device_code:
-        return {"ok": False, "error": f"command {command_id} not found for device {device_code}"}
-
     state = (reported_relay_state or "OFF").upper()
-    cmd["status"] = "ACKNOWLEDGED"
-    cmd["acknowledged_at"] = _utc_now()
+    result = commands.acknowledge(
+        command_id,
+        device_code,
+        reported_state={"relay": state},
+        room_code=room_code,
+    )
+    if not result.get("ok"):
+        return result
 
-    _upsert_device(device_code, room_code=cmd.get("device_code") and room_code, reported_relay_state=state, connection_status="online")
+    # The device's report is the only thing that updates the device row's
+    # relay state; the command's ACKNOWLEDGED status is not a claim that the
+    # room is physically on.
+    _upsert_device(
+        device_code,
+        room_code=room_code or result["command"].get("room_code"),
+        reported_relay_state=state,
+        connection_status="online",
+    )
     if room_code:
         _upsert_room(room_code, assigned_device_id=device_code)
 
-    return {"ok": True, "acknowledged": True, "reported_relay_state": state}
+    return {
+        "ok": True,
+        "acknowledged": True,
+        "reported_relay_state": state,
+        "command": result["command"],
+        "device_state": result.get("device_state"),
+    }
 
 
 def override_power(room_code: str, authorised: bool, reason: str = "", duration_minutes: int = 60) -> Dict[str, Any]:
@@ -924,6 +1069,156 @@ def ingest_telemetry(
 
 
 # ---------------------------------------------------------------------------
+# Inventory (Bookings & Inventory module)
+# ---------------------------------------------------------------------------
+
+def inventory_list(*, available_only: bool = False) -> Dict[str, Any]:
+    """Room inventory with its current occupancy and controller assignment."""
+    rows = []
+    for room in _TABLES["rooms"].values():
+        booking = _find_active_booking_for_room(room["room_code"])
+        available = booking is None
+        if available_only and not available:
+            continue
+        rows.append({
+            **room,
+            "available": available,
+            "current_booking_id": (booking or {}).get("booking_id"),
+        })
+    return {"ok": True, "inventory": rows, "count": len(rows)}
+
+
+def inventory_add(
+    room_code: str,
+    display_name: Optional[str] = None,
+    *,
+    room_type: str = "standard",
+    rate: float = 150.0,
+    assigned_device_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Add a room to inventory. The room code is the inventory key."""
+    if not room_code:
+        return {"ok": False, "error": "room_code is required"}
+    if room_code in _TABLES["rooms"]:
+        return {"ok": False, "error": f"room {room_code} already exists"}
+    row = _upsert_room(
+        room_code=room_code,
+        display_name=display_name or room_code,
+        status="available",
+        assigned_device_id=assigned_device_id,
+        authorised=False,
+        authorised_reason="No active booking found",
+        room_type=room_type,
+        rate=float(rate),
+    )
+    return {"ok": True, "room": row}
+
+
+def allocate_room(
+    start_at: Any,
+    end_at: Any,
+    *,
+    room_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find the first room free for this window. Allocation is the booking's
+    room assignment; it does not itself create a reservation."""
+    start = _parse_ts(start_at)
+    end = _parse_ts(end_at)
+    if not start or not end or not end > start:
+        return {"ok": False, "error": "start_at and end_at must be valid datetimes with end after start"}
+    for room_code, room in _TABLES["rooms"].items():
+        if room_type and room.get("room_type") != room_type:
+            continue
+        if not _overlapping_confirmed_bookings(room_code, start, end):
+            return {
+                "ok": True,
+                "room_code": room_code,
+                "room": room,
+                "start_at": start.isoformat(),
+                "end_at": end.isoformat(),
+            }
+    return {"ok": False, "error": "no room in inventory is free for that window", "room_type": room_type}
+
+
+def booking_list(*, status: Optional[str] = None) -> Dict[str, Any]:
+    rows = []
+    for booking in _TABLES["bookings"].values():
+        if status and booking.get("booking_status") != status:
+            continue
+        payment = _find_payment_for_booking(booking["booking_id"])
+        rows.append({
+            **booking,
+            "payment_id": (payment or {}).get("payment_id"),
+            "payment_status": (payment or {}).get("payment_status"),
+        })
+    rows.sort(key=lambda r: r.get("start_at") or "")
+    return {"ok": True, "bookings": rows, "count": len(rows)}
+
+
+def booking_get(booking_id: str) -> Dict[str, Any]:
+    booking = _TABLES["bookings"].get(booking_id)
+    if not booking:
+        return {"ok": False, "error": f"Booking {booking_id} not found"}
+    payment = _find_payment_for_booking(booking_id)
+    return {"ok": True, "booking": booking, "payment": payment}
+
+
+# ---------------------------------------------------------------------------
+# Vertical slice: booking -> inventory -> payment -> check-in -> authorization
+#                 -> command -> device acknowledgement -> guest experience
+# ---------------------------------------------------------------------------
+
+def booking_flow(booking_id: str, business_id: str = "") -> Dict[str, Any]:
+    """The nine stages of the guest journey, each with the row that proves it.
+
+    This is derived from real state on every call. A stage the system has not
+    actually reached reports ok: False, which is the point: the UI cannot show
+    a green pipeline the data does not support.
+    """
+    booking = _TABLES["bookings"].get(booking_id)
+    if not booking:
+        return {"ok": False, "error": f"Booking {booking_id} not found"}
+    room_code = booking.get("room_code")
+    payment = _find_payment_for_booking(booking_id)
+    ci = get_check_in(business_id, booking_id).get("check_in")
+    auth = effective_authorization(business_id, room_code) if room_code else {"authorized": False, "reason": "no_room"}
+    room_commands = commands.list_commands(business_id, room_code=room_code) if room_code else []
+    acked = [c for c in room_commands if c.get("status") == commands.ACKNOWLEDGED]
+    device_code = (ci or {}).get("device_code") or (_TABLES["rooms"].get(room_code) or {}).get("assigned_device_id")
+    state = commands.device_state(business_id, device_code) if device_code else None
+
+    stages = [
+        {"stage": "booking_created", "ok": booking.get("booking_status") in ("confirmed", "checked_in"),
+         "evidence": {"booking_id": booking_id, "booking_status": booking.get("booking_status")}},
+        {"stage": "inventory_allocated", "ok": bool(room_code) and room_code in _TABLES["rooms"],
+         "evidence": {"room_code": room_code}},
+        {"stage": "payment_confirmed", "ok": (payment or {}).get("payment_status") == "confirmed",
+         "evidence": payment},
+        {"stage": "guest_verified", "ok": bool((ci or {}).get("verified_at")),
+         "evidence": {"verified_at": (ci or {}).get("verified_at")}},
+        {"stage": "receptionist_approved", "ok": bool((ci or {}).get("approved_at")),
+         "evidence": {"approved_at": (ci or {}).get("approved_at")}},
+        {"stage": "authorization_granted", "ok": bool(auth.get("authorized")),
+         "evidence": {"reason": auth.get("reason"), "event": auth.get("event")}},
+        {"stage": "command_queued", "ok": any(c.get("authorization_event_id") for c in room_commands),
+         "evidence": {"commands": [c["command_id"] for c in room_commands]}},
+        {"stage": "device_acknowledged", "ok": bool(acked),
+         "evidence": {"command_id": acked[-1]["command_id"] if acked else None,
+                      "reported_state": acked[-1].get("device_reported_state") if acked else None}},
+        {"stage": "guest_experience", "ok": bool(state and (state.get("reported_state") or {}).get("relay") == "ON"),
+         "evidence": state},
+    ]
+    return {
+        "ok": True,
+        "booking_id": booking_id,
+        "business_id": business_id,
+        "stages": stages,
+        "complete": all(s["ok"] for s in stages),
+        "blocked_at": next((s["stage"] for s in stages if not s["ok"]), None),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Status / snapshot the UI actually calls
 # ---------------------------------------------------------------------------
 
@@ -941,7 +1236,8 @@ def get_status(payload: Optional[Dict[str, Any]] = None, *, seed: bool = False) 
     bookings = list(_TABLES["bookings"].values())
     payments = list(_TABLES["payments"].values())
     devices = list(_TABLES["devices"].values())
-    commands = list(_TABLES["commands"].values())
+    business_id = (payload or {}).get("business_id", "") if isinstance(payload, dict) else ""
+    command_rows = commands.list_commands(business_id or None)
     alerts = _find_alerts(status="ACTIVE")
     # Most recent telemetry per room.
     latest_by_room: Dict[str, Dict[str, Any]] = {}
@@ -952,8 +1248,8 @@ def get_status(payload: Optional[Dict[str, Any]] = None, *, seed: bool = False) 
 
     # Outstanding commands grouped by device.
     outstanding_by_device: Dict[str, List[Dict[str, Any]]] = {}
-    for row in commands:
-        if row.get("status") in ("PENDING", "DELIVERED"):
+    for row in command_rows:
+        if row.get("status") in (commands.PENDING, commands.SENT):
             dc = row.get("device_code")
             outstanding_by_device.setdefault(dc, []).append(row)
 
@@ -965,8 +1261,15 @@ def get_status(payload: Optional[Dict[str, Any]] = None, *, seed: bool = False) 
         "rooms": rooms,
         "bookings": bookings,
         "payments": payments,
+        "stay_windows": _stay_windows(),
         "devices": devices,
-        "commands": commands,
+        "commands": command_rows,
+        "command_states": list(commands.STATES),
+        "device_state": {
+            row["device_code"]: commands.device_state(business_id, row["device_code"])
+            for row in devices
+        },
+        "business_surface": business_surface(business_id) if business_id else None,
         "latest_telemetry_by_room": latest_by_room,
         "active_alerts": alerts,
         "outstanding_commands_by_device": outstanding_by_device,
@@ -1006,6 +1309,101 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
         return on_booking_post_save(data)
     if hook == "pegpower.on_telemetry_post_save" or action == "on_telemetry_post_save":
         return on_telemetry_post_save(data)
+    if hook == "pegpower.on_command_post_save" or action == "on_command_post_save":
+        return roompower.on_command_post_save(data)
+    if hook == "pegpower.on_device_post_save" or action == "on_device_post_save":
+        return roompower.on_device_post_save(data)
+    if hook == "pegpower.on_verification_post_save" or action == "on_verification_post_save":
+        return quickpass.on_verification_post_save(data)
+    if hook == "pegpower.on_authorization_post_save" or action == "on_authorization_post_save":
+        return guestops.on_authorization_post_save(data)
+    if hook == "pegpower.on_service_request_post_save" or action == "on_service_request_post_save":
+        return guestops.on_service_request_post_save(data)
+
+    # ---- RoomPower: the AZ3166 twin ----
+    if action == "twin_ack":
+        return roompower.acknowledge(
+            command_id=data.get("command_id", ""),
+            device_code=data.get("device_code", ""),
+            relay=data.get("relay") or data.get("reported_relay_state") or "OFF",
+            business_id=data.get("business_id", ""),
+            room_code=data.get("room_code"),
+        )
+    # ---- QuickPass: verification behind a replaceable provider ----
+    if action == "quickpass_start":
+        return quickpass.start_verification(
+            booking_id=data.get("booking_id", ""),
+            guest_label=data.get("guest_label", ""),
+            room_code=data.get("room_code"),
+            provider_name=data.get("provider"),
+        )
+    if action == "quickpass_refresh":
+        return quickpass.refresh_verification(
+            {
+                "session_id": data.get("session_id", ""),
+                "provider": data.get("provider", "demo"),
+                "status": data.get("status", ""),
+            },
+            provider_name=data.get("provider"),
+        )
+    if action == "quickpass_provider":
+        return {"ok": True, **guestops.provider_summary()}
+    if action == "quickpass_normalize":
+        return {
+            "ok": True,
+            "status": quickpass.normalize_status(data.get("provider_status")),
+            "known": quickpass.DIDIT_STATUSES,
+        }
+    if action == "quickpass_webhook_verify":
+        raw = data.get("raw_body") or ""
+        if isinstance(raw, str):
+            raw = raw.encode("utf-8")
+        return quickpass.verify_webhook(
+            raw,
+            data.get("headers") or {},
+            data.get("secret") or os.environ.get("DIDIT_WEBHOOK_SECRET", ""),
+        )
+
+    # ---- Guest Experience & Ops ----
+    if action == "checkin_eligibility":
+        return {
+            "ok": True,
+            **guestops.check_in_eligibility(
+                booking=data.get("booking"),
+                payment=data.get("payment"),
+                verification=data.get("verification"),
+                room=data.get("room"),
+            ),
+        }
+    if action == "checkin_approve":
+        return guestops.approve_check_in(
+            business_id=data.get("business_id", ""),
+            booking=data.get("booking") or {},
+            payment=data.get("payment"),
+            verification=data.get("verification"),
+            actor=data.get("actor_id", "reception"),
+            override_review=bool(data.get("override_review", False)),
+            ttl_hours=int(data.get("ttl_hours", guestops.DEFAULT_GRANT_HOURS)),
+        )
+    if action == "checkout_plan":
+        return guestops.checkout(
+            business_id=data.get("business_id", ""),
+            booking=data.get("booking") or {},
+            device_code=data.get("device_code"),
+            actor=data.get("actor_id", "reception"),
+            reason=data.get("reason", "guest checked out"),
+        )
+    if action == "grant_live":
+        return {"ok": True,
+                "live": guestops.grant_is_live(data.get("event"))}
+    if action == "service_request_validate":
+        return guestops.validate_request(data)
+
+    if action == "twin_decide":
+        return roompower.decide_command(
+            data.get("business_id", ""),
+            data,
+        )
 
     # Actions
     if action == "get_status":
@@ -1062,4 +1460,447 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
             observed_at=data.get("observed_at"),
         )
 
-    return {"ok": True, "peg": "pegpower", "timestamp": _utc_now()}
+    # ---- QuickPass / check-ins module (consolidation) ----
+    # These actions are routed here so the one peg can create, verify,
+    # approve, activate and check out a guest. Room activation is driven by
+    # the check_ins coil: it only fires when both smart_room and identity are
+    # live for the business and the check-in is verified + approved.
+
+    # The check_ins module keeps its own in-memory store during validation.
+    # In a Workpeg deployment each of these would read/write the real
+    # check_ins table via the SDK, and the coil would be built from the
+    # business's module_profile via platform.build_surface.
+    if action in (
+        "check_in_create",
+        "check_in_verify",
+        "check_in_approve",
+        "check_in_activate",
+        "check_in_check_out",
+        "check_in_get",
+        "check_in_list",
+    ):
+        gate = module_gate(data.get("business_id", ""), "quickpass")
+        if gate:
+            return gate
+        if action in ("check_in_activate", "check_in_check_out"):
+            gate = module_gate(data.get("business_id", ""), "roompower")
+            if gate:
+                return gate
+
+    if action == "check_in_create":
+        return create_check_in(
+            business_id=data.get("business_id", ""),
+            booking_id=data.get("booking_id", ""),
+            room_code=data.get("room_code", ""),
+            guest_label=data.get("guest_label", ""),
+            actor_id=data.get("actor_id", "staff"),
+            check_in_id=data.get("check_in_id"),
+        )
+
+    if action == "check_in_verify":
+        return verify_check_in(
+            business_id=data.get("business_id", ""),
+            booking_id=data.get("booking_id", ""),
+            actor_id=data.get("actor_id", "staff"),
+            note=data.get("note"),
+        )
+    if action == "check_in_approve":
+        bid = data.get("business_id", "")
+        booking_id = data.get("booking_id", "")
+        actor_id = data.get("actor_id", "staff")
+        result = approve_check_in(
+            business_id=bid,
+            booking_id=booking_id,
+            actor_id=actor_id,
+            note=data.get("note"),
+        )
+        if not result.get("ok"):
+            return result
+        # Reception approval is the moment Core issues the room-activation
+        # grant. RoomPower later consumes that grant; it never reads the
+        # check-in row itself, so any provider (PMS, door lock) can emit the
+        # same event.
+        ci = get_check_in(bid, booking_id).get("check_in") or {}
+        room_code = data.get("room_code") or ci.get("room_code")
+        if not room_code:
+            return {**result, "authorization_event": None,
+                    "note": "check-in approved, but no room is attached so no grant was issued"}
+        event = authorize_room_activation(
+            business_id=bid,
+            room_code=room_code,
+            source=data.get("source", "quickpass"),
+            issued_by=actor_id,
+            metadata={"check_in_id": ci.get("check_in_id"), "booking_id": booking_id},
+        )
+        return {**result, "authorization_event": event,
+                "authorization": effective_authorization(bid, room_code)}
+    if action == "check_in_activate":
+        bid = data.get("business_id", "")
+        booking_id = data.get("booking_id", "")
+        ci = get_check_in(bid, booking_id).get("check_in") or {}
+        room_code = data.get("room_code") or ci.get("room_code")
+        authorization = effective_authorization(bid, room_code) if room_code else None
+
+        def _dispatch(event: Dict[str, Any]) -> Dict[str, Any]:
+            room = _TABLES["rooms"].get(event.get("room_code")) or {}
+            device_code = data.get("device_code") or ci.get("device_code") or room.get("assigned_device_id")
+            if not device_code:
+                return {"ok": False, "error": "no device assigned to this room", "authorization": authorization}
+            return dispatch_activation(
+                bid,
+                event["room_code"],
+                device_code,
+                actor=data.get("actor_id", "system"),
+                event_id=event["event_id"],
+            )
+
+        return activate_room(
+            business_id=bid,
+            booking_id=booking_id,
+            actor_id=data.get("actor_id", "staff"),
+            room_code=room_code,
+            device_code=data.get("device_code"),
+            surface=data.get("surface"),
+            queue_command=queue_command if authorization is None else None,
+            authorization=authorization,
+            dispatch=_dispatch if authorization is not None else None,
+        )
+
+    if action == "check_in_check_out":
+        bid = data.get("business_id", "")
+        booking_id = data.get("booking_id", "")
+        ci = get_check_in(bid, booking_id).get("check_in") or {}
+
+        def _dispatch_checkout(row: Dict[str, Any]) -> Dict[str, Any]:
+            room = _TABLES["rooms"].get(row.get("room_code")) or {}
+            device_code = data.get("device_code") or row.get("device_code") or room.get("assigned_device_id")
+            return dispatch_checkout(
+                bid,
+                row.get("room_code"),
+                device_code,
+                actor=data.get("actor_id", "system"),
+                source=data.get("source", "quickpass"),
+                reason=data.get("reason", "guest checked out"),
+            )
+
+        result = check_out(
+            business_id=bid,
+            booking_id=booking_id,
+            actor_id=data.get("actor_id", "staff"),
+            room_code=data.get("room_code") or ci.get("room_code"),
+            device_code=data.get("device_code"),
+            surface=data.get("surface"),
+            queue_command=None,
+            dispatch=_dispatch_checkout,
+        )
+        # A completed stay returns the room to inventory availability and
+        # mirrors the legacy authorised flag off.
+        room = _TABLES["rooms"].get(result.get("check_in", {}).get("room_code") or data.get("room_code") or ci.get("room_code"))
+        if result.get("ok") and room:
+            _upsert_room(room_code=room["room_code"], authorised=False,
+                         authorised_reason="Guest checked out")
+        return result
+
+    # ---- platform module model actions ----
+    if action == "module_catalog_list":
+        return {"ok": True, "modules": [describe_module(m["module_id"]) or m for m in catalog_list()]}
+
+    if action == "module_get":
+        mid = data.get("module_id", "")
+        info = describe_module(mid)
+        if not info:
+            return {"ok": False, "error": f"unknown module {mid}"}
+        return {"ok": True, "module": info}
+
+    if action == "module_surface":
+        # What the UI is allowed to show: navigation, pages, controls. The
+        # function gates every action again, so this is convenience only.
+        return {"ok": True, "surface": business_surface(data.get("business_id", ""))}
+
+    if action == "module_bootstrap":
+        # Configure a business from its type profile. Businesses with no
+        # business_modules rows stay unconfigured and keep working, which is
+        # how the existing-business migration stays safe.
+        business_type = data.get("business_type", "")
+        if business_type not in business_types():
+            return {"ok": False, "error": f"unknown business type {business_type}",
+                    "business_types": business_types()}
+        result = install_for_profile(
+            data.get("business_id", ""),
+            business_type,
+            source=data.get("source", "profile"),
+            actor=data.get("actor_id", "system"),
+        )
+        return {"ok": True, **result}
+
+    if action == "module_dependency_check":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        if mid and not catalog_get(mid):
+            return {"ok": False, "error": f"unknown module {mid}"}
+        if mid:
+            return {"ok": True, "module_id": mid, "dependencies": module_dependencies(mid),
+                    "missing": missing_dependencies(bid, mid)}
+        return {"ok": True, "dependencies": {
+            m["module_id"]: {**module_dependencies(m["module_id"]),
+                             "missing": missing_dependencies(bid, m["module_id"])}
+            for m in catalog_list()
+        }}
+
+    if action == "module_events":
+        return {"ok": True, "events": module_events(
+            data.get("business_id", ""), data.get("module_id") or None)}
+
+    if action == "module_profile_get":
+        business_type = data.get("business_type", "")
+        if not business_type:
+            return {"ok": True, "business_types": business_types()}
+        if business_type not in business_types():
+            return {"ok": False, "error": f"unknown business type {business_type}", "business_types": business_types()}
+        return {"ok": True, "business_type": business_type, "profile": profile_for(business_type)}
+
+    if action == "business_modules_get":
+        bid = data.get("business_id", "")
+        modules = get_business_modules(bid)
+        return {"ok": True, "business_modules": modules, "enabled": module_is_enabled_for(bid, data.get("module_id", "")) if data.get("module_id") else None}
+
+    if action == "module_install":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        if not mid:
+            return {"ok": False, "error": "module_id is required"}
+        if not catalog_get(mid):
+            return {"ok": False, "error": f"unknown module {mid}"}
+        enabled = data.get("enabled")
+        source = data.get("source", "admin")
+        try:
+            row = install_module(bid, mid, enabled=enabled, source=source)
+        except ModuleDependencyError as exc:
+            return exc.to_payload()
+        return {"ok": True, "business_module": row, "surface": business_surface(bid)}
+
+    if action == "module_enable":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        if not mid:
+            return {"ok": False, "error": "module_id is required"}
+        try:
+            row = enable_module(bid, mid)
+        except ModuleDependencyError as exc:
+            return exc.to_payload()
+        if row is None:
+            return {"ok": False, "error": f"module {mid} not installed for business {bid}"}
+        return {"ok": True, "business_module": row, "surface": business_surface(bid)}
+
+    if action == "module_disable":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        if not mid:
+            return {"ok": False, "error": "module_id is required"}
+        try:
+            row = disable_module(bid, mid, force=bool(data.get("force", False)))
+        except ModuleDependencyError as exc:
+            return exc.to_payload()
+        if row is None:
+            return {"ok": False, "error": f"module {mid} not installed for business {bid}"}
+        # Disabling preserves configuration and historical rows; only the
+        # enabled flag changes. The surface reflects the change immediately.
+        return {"ok": True, "business_module": row, "surface": business_surface(bid)}
+
+    if action == "module_config_set":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        key = data.get("key", "")
+        value = data.get("value")
+        if not mid or not key:
+            return {"ok": False, "error": "module_id and key are required"}
+        return {"ok": True, "config": set_module_config(bid, mid, key, value)}
+
+    if action == "module_config_get":
+        bid = data.get("business_id", "")
+        mid = data.get("module_id", "")
+        key = data.get("key")
+        cfg = {}
+        try:
+            cfg = {"ok": True, "config": get_module_config(bid, mid, key) if mid else {}}
+        except Exception as e:
+            cfg = {"ok": False, "error": str(e)}
+        return cfg
+
+    if action == "authorize_room_activation":
+        return {"ok": True, "event": authorize_room_activation(
+            business_id=data.get("business_id", ""),
+            room_code=data.get("room_code", ""),
+            source=data.get("source", "quickpass"),
+            issued_by=data.get("issued_by", "system"),
+            metadata=data.get("metadata"),
+        )}
+
+    if action == "revoke_room_activation":
+        return {"ok": True, "event": revoke_room_activation(
+            business_id=data.get("business_id", ""),
+            room_code=data.get("room_code", ""),
+            source=data.get("source", "quickpass"),
+            issued_by=data.get("issued_by", "system"),
+            metadata=data.get("metadata"),
+        )}
+
+    if action == "last_room_activation":
+        ev = last_authorized_room_activation(
+            business_id=data.get("business_id", ""),
+            room_code=data.get("room_code", ""),
+        )
+        if ev is None:
+            return {"ok": True, "event": None}
+        return {"ok": True, "event": ev}
+    if action == "check_in_get":
+        return get_check_in(
+            business_id=data.get("business_id", ""),
+            booking_id=data.get("booking_id", ""),
+        )
+    if action == "check_in_list":
+        return list_check_ins(
+            business_id=data.get("business_id", ""),
+        )
+
+    # ---- Bookings & Inventory module ----
+    if action in (
+        "inventory_list",
+        "inventory_add",
+        "allocate_room",
+        "booking_create",
+        "booking_list",
+        "booking_get",
+        "booking_flow",
+        "create_booking",
+        "cancel_booking",
+        "confirm_payment",
+    ):
+        gate = module_gate(data.get("business_id", ""), "bookings")
+        if gate:
+            return gate
+
+    if action == "inventory_list":
+        if not _SEEDED:
+            _seed()
+        return inventory_list(available_only=bool(data.get("available_only", False)))
+    if action == "inventory_add":
+        return inventory_add(
+            room_code=data.get("room_code", ""),
+            display_name=data.get("display_name"),
+            room_type=data.get("room_type", "standard"),
+            rate=data.get("rate", 150.0),
+            assigned_device_id=data.get("assigned_device_id"),
+        )
+    if action == "allocate_room":
+        if not _SEEDED:
+            _seed()
+        return allocate_room(
+            start_at=data.get("start_at"),
+            end_at=data.get("end_at"),
+            room_type=data.get("room_type"),
+        )
+    if action == "booking_create":
+        if not _SEEDED:
+            _seed()
+        return create_booking(
+            room_code=data.get("room_code", ""),
+            guest_label=data.get("guest_label", ""),
+            start_at=data.get("start_at"),
+            end_at=data.get("end_at"),
+            booking_status=data.get("booking_status"),
+        )
+    if action == "booking_list":
+        if not _SEEDED:
+            _seed()
+        return booking_list(status=data.get("status"))
+    if action == "booking_get":
+        return booking_get(data.get("booking_id", ""))
+    if action == "booking_flow":
+        return booking_flow(data.get("booking_id", ""), data.get("business_id", ""))
+
+    # ---- Command lifecycle (RoomPower) ----
+    if action in ("command_list", "command_cancel", "command_expire", "command_get",
+                  "checkout_policy_get", "checkout_policy_set", "dispatch_activation",
+                  "dispatch_checkout", "device_state_get"):
+        gate = module_gate(data.get("business_id", ""), "roompower")
+        if gate:
+            return gate
+
+    if action == "command_list":
+        return {"ok": True, "commands": commands.list_commands(
+            data.get("business_id") or None,
+            device_code=data.get("device_code"),
+            room_code=data.get("room_code"),
+            status=data.get("status"),
+        )}
+    if action == "command_get":
+        row = commands.get(data.get("command_id", ""))
+        if not row:
+            return {"ok": False, "error": f"command {data.get('command_id')} not found"}
+        return {"ok": True, "command": row}
+    if action == "command_cancel":
+        return commands.cancel(data.get("command_id", ""), data.get("reason", ""),
+                               actor=data.get("actor_id", "operator"))
+    if action == "command_expire":
+        # The scheduler entry point: expire overdue commands. Safe to call on a
+        # timer; this function itself does not run background timers.
+        return {"ok": True, "expired": commands.expire_due(
+            business_id=data.get("business_id") or None)}
+    if action == "device_state_get":
+        return {"ok": True, "device_state": commands.device_state(
+            data.get("business_id", ""), data.get("device_code", ""))}
+    if action == "checkout_policy_get":
+        return {"ok": True, "policy": commands.checkout_policy(data.get("business_id", ""))}
+    if action == "checkout_policy_set":
+        try:
+            policy = commands.set_checkout_policy(
+                data.get("business_id", ""), data.get("policy") or {})
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "policy": policy}
+    if action == "dispatch_activation":
+        return dispatch_activation(
+            data.get("business_id", ""),
+            data.get("room_code", ""),
+            data.get("device_code", ""),
+            actor=data.get("actor_id", "system"),
+            event_id=data.get("event_id"),
+        )
+    if action == "dispatch_checkout":
+        return dispatch_checkout(
+            data.get("business_id", ""),
+            data.get("room_code", ""),
+            data.get("device_code"),
+            actor=data.get("actor_id", "system"),
+            source=data.get("source", "quickpass"),
+            reason=data.get("reason", ""),
+        )
+
+    # ---- Authorization contract (any provider may emit events) ----
+    if action == "authorization_ingest":
+        event = data.get("event") or {}
+        try:
+            result = ingest_event(event, data.get("business_id", ""))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, **result}
+    if action == "authorization_effective":
+        return {"ok": True, "authorization": effective_authorization(
+            data.get("business_id", ""), data.get("room_code", ""))}
+    if action == "authorization_event_list":
+        from .authorization import AUTHORIZATION_EVENT_LOG
+        bid = data.get("business_id")
+        events = [e for e in AUTHORIZATION_EVENT_LOG if not bid or e.get("business_id") == bid]
+        if data.get("room_code"):
+            events = [e for e in events if e.get("room_code") == data.get("room_code")]
+        return {"ok": True, "events": events}
+
+    # An unknown action must fail loudly: silently returning ok would let the
+    # UI show success for something that never ran.
+    return {
+        "ok": False,
+        "error": f"unknown action {action!r}" if action else "no action supplied",
+        "peg": "pegpower",
+        "timestamp": _utc_now(),
+    }

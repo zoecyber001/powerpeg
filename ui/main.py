@@ -1,85 +1,98 @@
+"""The PegPower platform shell (PegPower Core and its installable modules).
+
+The bare "/" opens the person's last business, or their first. Every real page
+sits under the /b/[business_id] shell, so it renders inside the Scaffold and
+the platform tables are read for that business.
+
+Module gating is two-sided: the rail only offers modules this business has
+enabled, and every module route re-checks the same table, so a typed URL to a
+disabled module answers with one honest sentence. The function re-gates every
+action it serves; this UI is convenience, not the boundary.
+"""
 from workpeg.ui import (
-    Route, Router, Scaffold, State,
-    Column, Row, Container, Text, Button, Badge, Divider
+    App, Router, Route, Shell, State, Store, Padding, Button, Authenticated,
+    cookie, reload, navigate, workpeg,
 )
 
-class PegPowerHome(Scaffold):
-    is_authorised = State(False)
-    guest_name = State("Alice Johnson")
-    payment_status = State("Pending Payment")
-    room_status = State("Power Off")
+from app_shell import AppShell
+from components import EmptyState, ErrorState, LoadingState
+from pages.not_found import NotFoundPage
+from pages.overview import OverviewPage
+from pages.front_desk import FrontDeskPage
+from pages.module_page import ModulePage
+from pages.quickpass import QuickPassPage
+from pages.bookings import BookingsPage
+from pages.booking_detail import BookingDetailPage
+from pages.roompower import RoomPowerPage
+from pages.roompower_device import RoomPowerDevicePage
+from pages.commerce import MarketplacePage, HotelDetailPage, BusinessReservationsPage
 
-    def on_check_in(self):
-        self.guest_name = "Alice Johnson"
-        self.payment_status = "Pending Payment"
-        self.is_authorised = False
-        self.room_status = "Power Off"
 
-    def on_confirm_payment(self):
-        self.payment_status = "Paid"
-        self.is_authorised = True
-        self.room_status = "Power Active (230V)"
+class Landing(App):
+    """The bare "/": open the person's last business, or their first."""
 
-    def on_check_out(self):
-        self.guest_name = "Vacant"
-        self.payment_status = "No Charge"
-        self.is_authorised = False
-        self.room_status = "Power Off"
+    no_business = State(False)
+    error = State("")
+
+    async def on_mount(self):
+        cached = cookie.get("cachedBusiness")
+        if cached:
+            navigate("/b/" + cached)
+            return
+        try:
+            biz = await workpeg.first_business()
+            if biz:
+                navigate("/b/" + biz)
+                return
+            self.no_business = True
+        except Exception as e:
+            self.error = str(e)
+
+    def again(self):
+        reload()
 
     def build(self):
-        return Column(
-            Container(
-                Row(
-                    Text("PegPower Front Desk", style={"fontSize": "20px", "fontWeight": "bold"}),
-                    Badge(label="Front Desk Ops")
+        return Authenticated(self.body())
+
+    def body(self):
+        if self.error != "":
+            return Padding(
+                ErrorState(
+                    self.error,
+                    Button("Try again", variant="outline-gray", icon="refresh",
+                           on_click=self.again),
                 ),
-                style={"marginBottom": "20px"}
-            ),
-            Container(
-                Column(
-                    Row(
-                        Text("Room 204 • Ocean Suite", style={"fontSize": "16px", "fontWeight": "bold"}),
-                        Badge(label="Power Active") if self.is_authorised else Badge(label="Power Off")
-                    ),
-                    Divider(),
-                    Row(
-                        Column(
-                            Text("Guest:", style={"color": "#6c757d", "fontSize": "12px"}),
-                            Text(self.guest_name, style={"fontWeight": "bold", "fontSize": "15px"})
-                        ),
-                        Column(
-                            Text("Payment Status:", style={"color": "#6c757d", "fontSize": "12px"}),
-                            Text(self.payment_status, style={"fontWeight": "bold", "fontSize": "15px"})
-                        )
-                    ),
-                    Divider(),
-                    Row(
-                        Button("Verify Payment & Enable Power", on_click=self.on_confirm_payment),
-                        Button("Check Out & Cut Power", on_click=self.on_check_out),
-                        Button("Check In New Guest", on_click=self.on_check_in)
-                    )
-                ),
-                style={"padding": "20px", "backgroundColor": "#ffffff", "borderRadius": "12px", "border": "1px solid #dee2e6", "marginBottom": "20px"}
-            ),
-            Row(
-                Container(
-                    Column(
-                        Text("Room 101 • Executive Suite", style={"fontWeight": "bold"}),
-                        Text("Guest: Marcus Vance (Paid)"),
-                        Text("Power: Active (230V)", style={"color": "#198754"})
-                    ),
-                    style={"padding": "15px", "backgroundColor": "#f8f9fa", "borderRadius": "10px", "border": "1px solid #dee2e6", "flex": "1"}
-                ),
-                Container(
-                    Column(
-                        Text("Room 102 • Standard Room", style={"fontWeight": "bold"}),
-                        Text("Guest: Vacant"),
-                        Text("Power: Cut (0V)", style={"color": "#6c757d"})
-                    ),
-                    style={"padding": "15px", "backgroundColor": "#f8f9fa", "borderRadius": "10px", "border": "1px solid #dee2e6", "flex": "1"}
-                )
+                all=24,
             )
-        )
+        if self.no_business:
+            return Padding(
+                EmptyState(
+                    "building",
+                    "You are not in a business yet",
+                    "Ask an owner to add you, then check again.",
+                    Button("Check again", variant="outline-gray",
+                           icon="refresh", on_click=self.again),
+                ),
+                all=24,
+            )
+        return Padding(LoadingState("Opening your workspace..."), all=24)
+
 
 class Main(Router):
-    routes = [Route("/", PegPowerHome)]
+    store = Store(business="", page_title="")
+    routes = [
+        Route("/", Landing),
+        Route("/b/[business_id]", AppShell),
+        Route("/b/[business_id]/", OverviewPage),
+        Route("/b/[business_id]/front-desk", FrontDeskPage),
+        Route("/b/[business_id]/bookings", BookingsPage),
+        Route("/b/[business_id]/bookings/[booking_id]", BookingDetailPage),
+        Route("/b/[business_id]/roompower", RoomPowerPage),
+        Route("/b/[business_id]/roompower/[device_code]", RoomPowerDevicePage),
+        Route("/b/[business_id]/m/[module_id]", ModulePage),
+        Route("/b/[business_id]/quickpass", QuickPassPage),
+        Route("/b/[business_id]/marketplace", MarketplacePage),
+        Route("/b/[business_id]/marketplace/[stay_id]", HotelDetailPage),
+        Route("/b/[business_id]/ecommerce/reservations", BusinessReservationsPage),
+    ]
+    not_found = NotFoundPage

@@ -61,3 +61,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Local browser-verification scratch (see docs §14.6.1)
+.tmp-ui-harness/
