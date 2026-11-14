@@ -10,8 +10,8 @@ This repo is one Workpeg Peg (`pegpower`, v1.0.2): a function plus a Workpeg-nat
 
 - **Function** — `function/app/main.py`. The backend logic: modules, per-business activation, authorization events, and the preserved check-in / room-power flows. Runs through `workpeg function`.
 - **UI** — `ui/main.py` (compiled by `workpeg ui build ui/` into `ui/dist`). A business-scoped Workpeg app under `/b/[business_id]`, with pages for overview, bookings, booking detail, room power, quick pass, and guarded module routes.
-- **Manifest** — `workpeg.json`. One peg, 13 tables, `dev: { "others": "deny" }`.
-- **Docs** — `docs/001-pegpower-system-architecture.md`.
+- **Manifest** — `workpeg.json`. One peg, 18 tables, `dev: { "others": "deny" }`.
+- **Docs** — `docs/001-pegpower-system-architecture.md`, plus the phase-0 assessment, progress log, release-process findings, and the Workpeg Lagos 2026 contestant guide in `docs/`.
 
 The old single-page React dashboard lives in `frontend/`. It is a prototype artifact; the active work is the Workpeg peg above.
 
@@ -34,7 +34,7 @@ The old single-page React dashboard lives in `frontend/`. It is a prototype arti
 **Run the function tests.**
 
 ```bash
-PYTHONPATH=function .venv/bin/pytest -v function/tests/
+PYTHONPATH=function .venv/bin/pytest -q tests/
 ```
 
 **Serve the UI locally** (needs a session token in `WORKPEG_PK` for the live API to verify; without one the shell still serves, but the in-page session can't be verified):
@@ -58,16 +58,25 @@ QuickPass reads the `check_ins` table (each check-in linked to its booking) and 
 
 ## Current status
 
-- Manifest valid; `workpeg doctor .` clean.
-- UI builds; app bundle confirmed to include QuickPass, its `/quickpass` route, and `check_ins` reads.
-- Function module model + authorization layer implemented and exercised end to end.
-- Browser verified headless against a **stub** of the Workpeg API: pages render, table reads resolve, gating branches behave. Not yet verified against the live API.
+The connected guest workflow is built and tested end to end:
 
-**Not done yet:**
+1. Guest finds a room in the marketplace, picks dates, reserves, and pays (clearly-labelled demo payment).
+2. QuickPass runs a real Didit identity session (verified live against the Didit sandbox); decisions normalize to `pending | verified | rejected | review_required | expired | error` — unknown statuses map to `error`, never to a pass.
+3. Front desk computes eligibility from payment + identity state and shows every blocked reason; **approval is an explicit human act** that writes the grant, a check-in, and a `POWER_ON` command. A Didit approval alone never checks anyone in.
+4. RoomPower dispatches commands (refused without a live grant), the AZ3166 digital twin reports state, and commands are acknowledged by matching `command_id`. Requested / commanded / reported are three separate fields.
+5. Guest hub shows the stay and the room's last **reported** power state; guests raise service requests.
+6. Checkout revokes the grant, applies the business's energy policy (`CUT_NON_ESSENTIAL`, never a blanket shutdown), and raises a housekeeping task.
 
-- Live-API browser run — blocked on a valid session token for the `pegpower` peg/business.
-- Module bodies for Guest Hub, Deals, Property Ops — catalog entries and gated routes exist; full page sets don't yet.
-- UI writes — everything is read-only for now.
+What's real vs simulated: Didit sessions, table persistence, the command lifecycle and report ingestion are real; the payment and the AZ3166 device twin are simulated and labelled as such everywhere.
+
+- **88 tests pass**: `tests/test_platform.py`, `tests/test_roompower.py`, `tests/test_quickpass_guestops.py`, `tests/test_webhook_relay.py`.
+- Didit sandbox credentials live in `.env.local` (gitignored); the sandbox test key should be rotated for production.
+
+**Known limitations:**
+
+- The compiled browser UI cannot invoke Function actions (a Workpeg platform rule), so a real Didit session is started through the function path, not a page button — the UI never fakes that button.
+- Webhooks need a public URL; until one is deployed, polling (`quickpass_refresh`) is the documented fallback. `tools/didit_webhook_relay.py` is a ready-to-deploy WSGI receiver, built and tested but not yet hosted.
+- Hook refusals are defence in depth; whether the platform rejects a save on `{"ok": false, "refused": true}` is unverified, so pages validate on their own.
 - Whole-Peg publish — not runnable yet.
 
 ---
@@ -78,16 +87,22 @@ QuickPass reads the `check_ins` table (each check-in linked to its booking) and 
 powerpeg/
 ├── function/          # Workpeg function (backend logic)
 ├── ui/                # Workpeg-native UI (Python → JS via workpeg ui build)
+├── tests/             # 88 pytest tests for the function modules
+├── tools/             # didit_webhook_relay.py — deployable webhook receiver
 ├── frontend/          # Old React dashboard prototype (artifact)
 ├── docs/
 │   ├── 000-phase0-feasibility-and-architecture.md
-│   └── 001-pegpower-system-architecture.md
-├── workpeg.json       # Peg manifest
+│   ├── 001-pegpower-system-architecture.md
+│   ├── 002-implementation-assessment.md
+│   ├── 003-implementation-progress.md
+│   ├── workpeg_release_process_findings.md
+│   └── Workpeg_Lagos_Contestant_Guide_2026.pdf
+├── workpeg.json       # Peg manifest (18 tables, SDK 0.163.0)
 └── README.md
 ```
 
 ## Two things on the side
 
-**Face/identity verification (didit.me and similar).** Not in this peg. The rule is: keep identity verification separate from booking, payment, check-in approval, and device activation; staff review/escalation; protect sensitive identity data; the peg does not hold provider secrets. For Nigeria the noted recommendation is Didit (free tier, NIN/BVN native) with Dojah as fallback — the operator's own server calls the verification provider, and the peg reads whatever that server writes into a table. It's a decision + server-side integration, not code in this peg yet.
+**Face/identity verification (didit.me).** In this peg via QuickPass: `function/app/quickpass.py` has a provider seam — `DiditProvider` calls the real `POST /v3/session/` and decision endpoints with an `x-api-key` header (verified live against the Didit sandbox), with a `DemoProvider` fallback that is always labelled demo. Provider credentials live server-side only (`.env.local` locally, the function environment in production); nothing reaches the browser. Webhook verification (`X-Signature-V2` HMAC, 300s replay window) is implemented with rotation header support. The rule stands: identity verification stays separate from booking, payment, and check-in approval — a verified identity is evidence for the receptionist, never an automatic check-in. For Nigeria, Didit is the noted provider (free tier, NIN/BVN native) with Dojah as fallback.
 
 **Other pegs (separate publish + approval).** This repo also contains `quickpass-ng/`, which is its own Workpeg peg (its own namespace + manifest), separate from `pegpower`. Any independently published peg goes through the Workpeg publish path: register the peg on `developers.workpeg.com` (reviewed, can take up to three working days), generate an upload token as `WORKPEG_PK` (never in the peg), then submit the function and the built UI manifest. Whole-Peg publish is documented but not runnable yet, so each half currently ships through its own command. Those pegs are not in this commit.
