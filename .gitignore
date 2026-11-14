@@ -64,3 +64,9 @@ Thumbs.db
 
 # Local browser-verification scratch (see docs §14.6.1)
 .tmp-ui-harness/
+
+# Local demo material and backups, not part of the deliverable
+unslop/
+screenshots/
+*.bak
+quickpass-ng/
