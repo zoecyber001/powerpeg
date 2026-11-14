@@ -1365,6 +1365,32 @@ def main(context=None, payload=None, **kwargs) -> Dict[str, Any]:
             data.get("headers") or {},
             data.get("secret") or os.environ.get("DIDIT_WEBHOOK_SECRET", ""),
         )
+    if action == "quickpass_webhook_apply":
+        # The relay (or the operator's own public server) forwards the request
+        # body and headers here, once. Verification and idempotency live in
+        # quickpass.apply_webhook; this action only chooses the secret.
+        raw = data.get("raw_body") or ""
+        return quickpass.apply_webhook(
+            raw,
+            data.get("headers") or {},
+            data.get("secret") or os.environ.get("DIDIT_WEBHOOK_SECRET", ""),
+            current=data.get("current") or None,
+        )
+    if action == "quickpass_webhook_config":
+        secret = os.environ.get("DIDIT_WEBHOOK_SECRET", "")
+        return {
+            "ok": True,
+            "secret_configured": bool(secret),
+            "provider": quickpass.provider_for().name,
+            "tolerance_seconds": quickpass.WEBHOOK_TOLERANCE_SECONDS,
+            "signature_headers": ["X-Signature-V2", "X-Signature",
+                                  "X-Signature-Simple"],
+            "requires": ("A public HTTPS URL that forwards the raw body and"
+                         " headers to quickpass_webhook_apply. The peg has no"
+                         " inbound HTTP endpoint of its own."),
+            "events_table": "verifications",
+            "idempotency_key": "last_event_id",
+        }
 
     # ---- Guest Experience & Ops ----
     if action == "checkin_eligibility":

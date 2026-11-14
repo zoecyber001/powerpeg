@@ -561,6 +561,10 @@
         {
           "name": "updated_at",
           "type": "datetime"
+        },
+        {
+          "name": "last_event_id",
+          "type": "string"
         }
       ],
       "hooks": {

@@ -67,8 +67,19 @@ Shell check: `python3 docs/check_workspace_shell.py`
 - `ui/pages/guest_hub.py` + route `/b/[business_id]/guest/[booking_id]` — stay,
   payment, identity status, the room's last **reported** power state, and a
   service-request form that appends to `service_requests`.
-- Tests: **78 passed** (`tests/test_platform.py`, `tests/test_roompower.py`,
-  `tests/test_quickpass_guestops.py`).
+- `function/app/quickpass.py` — webhook receiver: `apply_webhook` verifies the
+  signature, normalizes the verdict, and returns the row patch plus an
+  idempotency key (`last_event_id`); a redelivered event is a no-op and a late
+  "pending" cannot reopen a finished decision. Reached through the dispatcher
+  actions `quickpass_webhook_apply` and `quickpass_webhook_config`.
+- `tools/didit_webhook_relay.py` — the public endpoint the peg cannot be: a
+  dependency-free WSGI app that accepts `POST /didit/webhook`, verifies Didit's
+  HMAC, and returns the patch (`/health` for readiness). Verified live on a local
+  socket: signed request → 200, forged → 401, unknown path → 404.
+- `ui/pages/booking_detail.py` — a **Guest hub** action; `ui/pages/roompower_device.py`
+  — a report-freshness badge (fresh / stale, coloured) on the twin console.
+- Tests: **88 passed** (`tests/test_platform.py`, `tests/test_roompower.py`,
+  `tests/test_quickpass_guestops.py`, `tests/test_webhook_relay.py`).
 
 ## Known limitation: credentials
 
@@ -95,9 +106,13 @@ the browser. `DIDIT_WEBHOOK_SECRET` is needed only for webhook verification.
 - No Chrome in this environment, so no screenshot or visual verification.
 - `api.workpeg.com` rejected the available token (`token_not_valid`), so no live
   platform API run. Docker build status unknown this session.
-- Didit webhooks need a publicly reachable URL; the peg has no inbound endpoint,
-  so polling (`quickpass_refresh`) is the working path. Webhook registration:
-  `POST /v3/webhook/destinations/` with label/url/subscribed_events.
+- The webhook receiver is built and tested, but **not deployed**: this
+  environment has no host, account, or public DNS, so there is no live URL yet.
+  Deploy `tools/didit_webhook_relay.py` (any WSGI host), set
+  `DIDIT_WEBHOOK_SECRET` on it and on the function, then register the URL with
+  `POST /v3/webhook/destinations/` (label/url/subscribed_events). Until that URL
+  exists, polling (`quickpass_refresh`) stays the working path — now documented
+  as the fallback rather than the design.
 - Whether the platform enforces hook refusals as rejected saves.
 
 ## Decisions worth keeping

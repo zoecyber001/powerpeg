@@ -350,10 +350,12 @@ def refresh_verification(row: dict[str, Any],
                          provider_name: Optional[str] = None) -> dict[str, Any]:
     """Ask the provider what it decided, and return the fields to update.
 
-    Polling is used rather than a webhook because a Workpeg Function is invoked
-    by the platform's save hooks; it has no inbound HTTP endpoint of its own, so
-    the honest integration here is "the screen asks the provider" (and
-    :func:`verify_webhook` is provided for a deployment that does have one).
+    Webhooks are the primary path: :func:`apply_webhook` verifies a delivery
+    from Didit and hands back the row patch, and ``tools/didit_webhook_relay.py``
+    is the public endpoint that receives it. Polling stays because a missed or
+    late delivery must not strand a guest at the desk: this function asks the
+    provider for the current decision, which is the same truth by a slower
+    route. It is the fallback, not the design.
     """
     session_id = str(row.get("session_id") or "")
     provider = provider_for(provider_name or row.get("provider"))
@@ -490,6 +492,131 @@ def verify_webhook(
                 }
 
     return {"ok": False, "error": "No signature matched."}
+
+
+# ---------------------------------------------------------------------------
+# Applying a webhook (the primary path once a public URL exists)
+# ---------------------------------------------------------------------------
+
+#: Once a verification reaches one of these, a later "still pending" webhook is
+#: a delivery-order artefact, not news, and must not reopen the decision.
+TERMINAL_STATES = (VERIFIED, REJECTED, EXPIRED)
+
+_EVENT_HEADERS = ("x-event-id", "x-didit-event-id", "x-webhook-id")
+
+
+def _lower_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+
+
+def apply_webhook(
+    raw_body: Any,
+    headers: dict[str, str],
+    secret: str,
+    *,
+    now: Optional[int] = None,
+    current: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Verify one Didit webhook and turn it into a patch for a stored row.
+
+    This is the receiver's whole job: authenticate the request, refuse anything
+    unauthentic, normalize the verdict, and hand back the exact fields to write
+    with an idempotency key. It touches no storage, so the caller decides where
+    the row lives and can retry safely.
+
+    ``current`` is the stored verification row, when there is one. It is what
+    makes redelivery harmless: the same event id never applies twice, and a
+    "still pending" event cannot walk a finished decision backwards.
+
+    Returns ``{"ok": True, "applied": True, "patch": {...}}`` when there is
+    something to write, or ``applied: False`` with ``duplicate`` / ``stale`` /
+    ``needs_fetch`` saying why not.
+    """
+    if isinstance(raw_body, str):
+        raw_body = raw_body.encode("utf-8")
+    check = verify_webhook(raw_body, headers, secret, now=now)
+    if not check.get("ok"):
+        return {
+            "ok": False,
+            "applied": False,
+            "error": check.get("error") or "The signature did not match.",
+        }
+    try:
+        body = json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        return {"ok": False, "applied": False, "error": "The body is not JSON."}
+    if not isinstance(body, dict):
+        return {"ok": False, "applied": False, "error": "The body is not an object."}
+
+    session_id = str(body.get("session_id") or "")
+    if not session_id:
+        return {"ok": False, "applied": False,
+                "error": "The webhook carries no session_id."}
+
+    if check.get("trust_decision") is False:
+        return {
+            "ok": True,
+            "applied": False,
+            "needs_fetch": True,
+            "session_id": session_id,
+            "scheme": check.get("scheme"),
+            "note": check.get("note") or "Re-fetch the decision before acting.",
+        }
+
+    lowered = _lower_headers(headers)
+    event_id = str(body.get("event_id") or body.get("id") or "")
+    if not event_id:
+        for name in _EVENT_HEADERS:
+            if lowered.get(name):
+                event_id = lowered[name]
+                break
+    if not event_id:
+        event_id = session_id + ":" + str(body.get("status") or "") + ":" + str(
+            lowered.get("x-timestamp") or "")
+
+    result = normalize_result(body)
+    if current:
+        if str(current.get("last_event_id") or "") == event_id:
+            return {
+                "ok": True,
+                "applied": False,
+                "duplicate": True,
+                "session_id": session_id,
+                "event_id": event_id,
+                "status": result["status"],
+                "note": "This event was already applied.",
+            }
+        if (str(current.get("status") or "") in TERMINAL_STATES
+                and result["status"] == PENDING):
+            return {
+                "ok": True,
+                "applied": False,
+                "stale": True,
+                "session_id": session_id,
+                "event_id": event_id,
+                "status": str(current.get("status") or ""),
+                "note": ("A later pending event cannot reopen a finished"
+                         " verification."),
+            }
+
+    patch = {
+        "status": result["status"],
+        "provider_status": str(result.get("provider_status") or ""),
+        "decision": str(result.get("decision") or ""),
+        "session_id": session_id,
+        "provider": "didit",
+        "last_event_id": event_id,
+        "updated_at": _now_iso(),
+    }
+    return {
+        "ok": True,
+        "applied": True,
+        "session_id": session_id,
+        "event_id": event_id,
+        "status": result["status"],
+        "scheme": check.get("scheme"),
+        "patch": patch,
+    }
 
 
 # ---------------------------------------------------------------------------

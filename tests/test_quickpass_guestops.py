@@ -462,3 +462,80 @@ def test_grant_is_live_respects_status_and_expiry():
     assert guestops.grant_is_live({"status": "granted",
                                   "expires_at": "2000-01-01T00:00:00+00:00"}) is False
     assert guestops.grant_is_live(None) is False
+
+
+# ---------------------------------------------------------------------------
+# Applying a webhook (the receiver's contract)
+# ---------------------------------------------------------------------------
+
+def _signed(body: dict, secret: str = "secret", timestamp: str = ""):
+    raw = _raw(body)
+    sig = hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).hexdigest()
+    headers = {"X-Signature": sig}
+    if timestamp:
+        headers["X-Timestamp"] = timestamp
+    return raw, headers
+
+
+def test_webhook_application_normalizes_an_approval():
+    raw, headers = _signed({"session_id": "s1", "status": "Approved"})
+    out = quickpass.apply_webhook(raw, headers, "secret", now=int(time.time()))
+    assert out["ok"] is True
+    assert out["applied"] is True
+    assert out["status"] == quickpass.VERIFIED
+    assert out["patch"]["last_event_id"] == "s1:Approved:"
+
+
+def test_webhook_application_refuses_an_unauthentic_body():
+    raw = _raw({"session_id": "s1", "status": "Approved"})
+    out = quickpass.apply_webhook(raw, {"X-Signature": "nope"}, "secret",
+                                  now=int(time.time()))
+    assert out["ok"] is False
+    assert out["applied"] is False
+    assert "patch" not in out
+
+
+def test_webhook_application_never_turns_an_unknown_status_into_a_pass():
+    raw, headers = _signed({"session_id": "s1", "status": "Approved by vibes"})
+    out = quickpass.apply_webhook(raw, headers, "secret", now=int(time.time()))
+    assert out["applied"] is True
+    assert out["status"] == quickpass.ERROR
+
+
+def test_webhook_application_does_not_apply_the_same_event_twice():
+    raw, headers = _signed({"session_id": "s1", "status": "Approved"})
+    first = quickpass.apply_webhook(raw, headers, "secret", now=int(time.time()))
+    again = quickpass.apply_webhook(
+        raw, headers, "secret", now=int(time.time()),
+        current={"status": quickpass.VERIFIED,
+                 "last_event_id": first["event_id"]},
+    )
+    assert again["ok"] is True
+    assert again["applied"] is False
+    assert again["duplicate"] is True
+
+
+def test_webhook_application_cannot_reopen_a_finished_verification():
+    raw, headers = _signed({"session_id": "s1", "status": "In Progress"})
+    out = quickpass.apply_webhook(
+        raw, headers, "secret", now=int(time.time()),
+        current={"status": quickpass.REJECTED, "last_event_id": "older"},
+    )
+    assert out["ok"] is True
+    assert out["applied"] is False
+    assert out["stale"] is True
+    assert out["status"] == quickpass.REJECTED
+
+
+def test_simple_signature_requires_a_fresh_decision_fetch():
+    body = {"session_id": "s1", "status": "Approved", "webhook_type": "status.updated"}
+    raw = _raw(body)
+    stamp = str(int(time.time()))
+    envelope = stamp + ":s1:Approved:status.updated"
+    sig = hmac.new(b"secret", envelope.encode("utf-8"), hashlib.sha256).hexdigest()
+    out = quickpass.apply_webhook(
+        raw, {"X-Signature-Simple": sig, "X-Timestamp": stamp}, "secret",
+        now=int(time.time()))
+    assert out["ok"] is True
+    assert out["applied"] is False
+    assert out["needs_fetch"] is True
